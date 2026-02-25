@@ -24,7 +24,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Orchestrator Image
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
@@ -34,4 +34,17 @@ jobs:
           TAG=$DATE-$SHA
           docker build -t $IMAGE:$TAG .
           docker push $IMAGE:$TAG
-          echo "✅ Pushed image: $IMAGE:$TAG"
+          echo "✅ Pushed orchestrator image: $IMAGE:$TAG"
+
+      - name: Build and Push Worker Image
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=ghcr.io/$OWNER/$REPO-worker
+          SHA=${GITHUB_SHA::7}
+          DATE=$(date -u +%Y%m%d%H%M%S)
+          TAG=$DATE-$SHA
+          docker build -f Dockerfile.worker -t $IMAGE:latest -t $IMAGE:$TAG .
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+          echo "✅ Pushed worker image: $IMAGE:$TAG"
