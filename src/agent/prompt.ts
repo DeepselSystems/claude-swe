@@ -2,11 +2,35 @@ interface NewTaskPromptOptions {
   cardId: string;
   cardName: string;
   cardUrl: string;
+  repos: string[];
   imageDir?: string;
 }
 
+function buildRepoSection(repos: string[]): string {
+  if (repos.length === 0) {
+    return `No repos are pre-configured for this board. Read the Trello card to determine the target repo,
+then clone it with \`gh repo clone <owner>/<repo>\`.`;
+  }
+  if (repos.length === 1) {
+    return `The configured repo for this board is:
+- ${repos[0]}
+
+Clone it with \`gh repo clone ${repoToSlug(repos[0])}\`.
+If the card refers to a different repo, clone that one instead.`;
+  }
+  return `The following repos are configured for this board:
+${repos.map((r) => `- ${r}`).join('\n')}
+
+Read the Trello card to determine which repo this task belongs to, then clone it with \`gh repo clone <owner>/<repo>\`.
+If the task requires a repo not in this list, clone that one instead.`;
+}
+
+function repoToSlug(url: string): string {
+  return url.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+}
+
 export function buildNewTaskPrompt(opts: NewTaskPromptOptions): string {
-  const { cardId, cardName, cardUrl, imageDir } = opts;
+  const { cardId, cardName, cardUrl, repos, imageDir } = opts;
 
   const imageSection = imageDir
     ? `
@@ -29,11 +53,17 @@ Card ID: ${cardId}
 Use the trello MCP server tools to read the full card details (description, checklists,
 any additional context). The card contains the full specification for what needs to be done.
 ${imageSection}
+## Repository
+
+${buildRepoSection(repos)}
+
 ## Steps to Complete
 
 1. Read the Trello card fully using the trello MCP \`get_card\` tool
-2. Explore this codebase to understand its structure and conventions
-3. Set up the runtime and install dependencies:
+2. Clone the target repo into /workspace and \`cd\` into it
+3. Create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
+4. Explore the codebase to understand its structure and conventions
+5. Set up the runtime and install dependencies:
    - If a \`.mise.toml\`, \`.tool-versions\`, \`.nvmrc\`, or \`.python-version\` file exists,
      run \`mise install\` first to install the correct runtime version
    - Then install project dependencies based on what you find:
@@ -51,18 +81,18 @@ ${imageSection}
      | \`Cargo.toml\` | \`cargo fetch\` |
      | \`Gemfile\` | \`bundle install\` |
    - If installation fails, read the error and fix it (missing system dep, wrong node version, etc.)
-4. Implement the solution described in the card
-5. Run the project's test suite and fix any failures before proceeding
-6. If this is a frontend task, use the Playwright MCP server to:
+6. Implement the solution described in the card
+7. Run the project's test suite and fix any failures before proceeding
+8. If this is a frontend task, use the Playwright MCP server to:
    a. Start the dev server (e.g., \`npm run dev\`)
    b. Navigate to the relevant pages
    c. Take screenshots and compare against the design references
    d. Iterate until the visual output matches
-7. Commit all changes with a clear, descriptive message
-8. Push the branch and open a PR using the gh CLI:
+9. Commit all changes with a clear, descriptive message
+10. Push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
-9. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
-10. Post the PR URL as a comment on the Trello card using the trello MCP \`add_comment\` tool
+11. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
+12. Post the PR URL as a comment on the Trello card using the trello MCP \`add_comment\` tool
 
 ## Important Rules
 
@@ -78,10 +108,11 @@ interface FeedbackPromptOptions {
   cardUrl: string;
   commentText: string;
   commenterName: string;
+  repos: string[];
 }
 
 export function buildFeedbackPrompt(opts: FeedbackPromptOptions): string {
-  const { cardId, cardUrl, commentText, commenterName } = opts;
+  const { cardUrl, commentText, commenterName } = opts;
 
   return `
 You are an autonomous software engineer handling review feedback on a pull request.
@@ -99,8 +130,8 @@ Comment: "${commentText}"
 3. Run \`mise install\` if a runtime config file exists, then install project dependencies
 4. Implement the requested changes
 5. Run the test suite and ensure all tests pass
-5. Commit and push your changes to the existing PR branch
-6. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
+6. Commit and push your changes to the existing PR branch
+7. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
    what you changed in response to the feedback
 
 ## Important Rules

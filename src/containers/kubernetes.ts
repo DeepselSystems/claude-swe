@@ -46,7 +46,7 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, repoUrl, branchName, prompt, isFollowUp, doneListId } = opts;
+    const { cardShortLink, prompt, doneListId } = opts;
     const jobName = this.jobName(cardShortLink);
     const pvcName = this.pvcName(cardShortLink);
     const log = logger.child({ job: jobName, namespace: this.namespace });
@@ -66,11 +66,6 @@ export class KubernetesBackend implements ContainerBackend {
       // No existing job — fine
     }
 
-    const authedUrl = repoUrl.replace('https://', `https://oauth2:${config.github.token ?? ''}@`);
-    const initCmd = isFollowUp
-      ? `cd /workspace && git fetch origin && git checkout ${branchName} && git pull origin ${branchName} || true`
-      : `git clone --depth 50 ${authedUrl} /workspace && cd /workspace && git checkout -b ${branchName}`;
-
     const job: k8s.V1Job = {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -88,14 +83,6 @@ export class KubernetesBackend implements ContainerBackend {
           },
           spec: {
             restartPolicy: 'Never',
-            initContainers: [
-              {
-                name: 'git-init',
-                image: 'alpine/git:latest',
-                command: ['sh', '-c', initCmd],
-                volumeMounts: [{ name: 'workspace', mountPath: '/workspace' }],
-              },
-            ],
             containers: [
               {
                 name: 'worker',

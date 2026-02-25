@@ -91,6 +91,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       cardName: card.name,
       cardDesc: card.desc,
       cardUrl: card.url,
+      boardId: board.id,
       doneListId: boardConfig.done?.listId,
     };
 
@@ -125,6 +126,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       cardShortLink: card.shortLink,
       cardUrl: card.url,
       cardDesc: card.desc,
+      boardId: board.id,
       commentText,
       commenterName: memberCreator.fullName,
       doneListId: boardConfig.done?.listId,

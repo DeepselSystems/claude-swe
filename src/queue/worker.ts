@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { runTaskInContainer, destroyTaskContainer } from '../containers/manager.js';
 import { buildNewTaskPrompt, buildFeedbackPrompt } from '../agent/prompt.js';
-import { extractRepoUrl } from '../workspace/repo.js';
+import { getBoardRepos } from '../workspace/repo.js';
 import { postTrelloComment } from '../trello/api.js';
 import type { NewTaskJob, FeedbackJob, CleanupJob } from '../webhook/types.js';
 
@@ -33,31 +33,24 @@ export const worker = new Worker(
 );
 
 async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
-  const { cardId, cardShortLink, cardName, cardDesc, cardUrl } = job.data;
+  const { cardId, cardShortLink, cardName, cardUrl, boardId } = job.data;
   const log = logger.child({ cardId, cardName });
 
   log.info('Starting new-task job');
 
-  // Determine which repo to work on
-  const repoUrl = extractRepoUrl(cardDesc);
-  if (!repoUrl) {
-    const msg = 'Could not determine target repo. Add `repo: https://github.com/org/name` to the card description, or set DEFAULT_GITHUB_REPO.';
-    await postTrelloComment(cardId, `❌ ${msg}`).catch(() => {});
-    throw new Error(msg);
-  }
-
   const branchName = `claude/${cardShortLink}`;
+  const repos = getBoardRepos(boardId);
 
   const prompt = buildNewTaskPrompt({
     cardId,
     cardName,
     cardUrl,
+    repos,
   });
 
   try {
     const { exitCode, logs } = await runTaskInContainer({
       cardShortLink,
-      repoUrl,
       branchName,
       prompt,
       isFollowUp: false,
@@ -81,26 +74,19 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
 }
 
 async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
-  const { cardId, cardShortLink, cardUrl, commentText, commenterName } = job.data;
+  const { cardId, cardShortLink, cardUrl, commentText, commenterName, boardId } = job.data;
   const log = logger.child({ cardId });
 
   log.info({ commenter: commenterName }, 'Starting feedback job');
 
   const branchName = `claude/${cardShortLink}`;
+  const repos = getBoardRepos(boardId);
 
-  // Determine repo URL — we need it even for follow-ups in case volume was lost
-  const repoUrl = extractRepoUrl(job.data.cardDesc ?? '');
-  if (!repoUrl) {
-    await postTrelloComment(cardId, '❌ Cannot process feedback — no repo URL found on card.').catch(() => {});
-    throw new Error('No repo URL for feedback job');
-  }
-
-  const prompt = buildFeedbackPrompt({ cardId, cardUrl, commentText, commenterName });
+  const prompt = buildFeedbackPrompt({ cardId, cardUrl, commentText, commenterName, repos });
 
   try {
     const { exitCode, logs } = await runTaskInContainer({
       cardShortLink,
-      repoUrl,
       branchName,
       prompt,
       isFollowUp: true,

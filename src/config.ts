@@ -23,6 +23,7 @@ const boardSchema = z.object({
   id: z.string().min(1),
   includeLists: z.array(z.string()).default([]),
   done: z.object({ listId: z.string().min(1) }).optional(),
+  repos: z.array(z.string().url()).default([]),
 });
 
 const configSchema = z.object({
@@ -35,7 +36,6 @@ const configSchema = z.object({
   github: z.object({
     token: z.string().nullable(),
     webhookSecret: z.string().nullable(),
-    defaultRepo: z.string().default(''),
   }),
   anthropic: z.object({
     apiKey: z.string().nullable(),

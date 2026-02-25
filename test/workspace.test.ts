@@ -1,36 +1,43 @@
-import { describe, it, expect } from 'vitest';
-import { extractRepoUrl } from '../src/workspace/repo.js';
+import { describe, it, expect, vi } from 'vitest';
 
-describe('extractRepoUrl', () => {
-  it('extracts repo URL from card description', () => {
-    const desc = `
-## Task
-Build a new dashboard
+vi.mock('../src/config.js', () => ({
+  getBoardConfig: vi.fn().mockImplementation((boardId: string) => {
+    if (boardId === 'board-single') {
+      return { id: 'board-single', includeLists: [], repos: ['https://github.com/myorg/my-app'] };
+    }
+    if (boardId === 'board-multi') {
+      return {
+        id: 'board-multi',
+        includeLists: [],
+        repos: ['https://github.com/myorg/frontend', 'https://github.com/myorg/backend'],
+      };
+    }
+    if (boardId === 'board-empty') {
+      return { id: 'board-empty', includeLists: [], repos: [] };
+    }
+    return undefined;
+  }),
+}));
 
-repo: https://github.com/myorg/my-app
+import { getBoardRepos } from '../src/workspace/repo.js';
 
-## Acceptance Criteria
-- Shows user metrics
-    `;
-    expect(extractRepoUrl(desc)).toBe('https://github.com/myorg/my-app');
+describe('getBoardRepos', () => {
+  it('returns repos for a board with a single repo', () => {
+    expect(getBoardRepos('board-single')).toEqual(['https://github.com/myorg/my-app']);
   });
 
-  it('handles case-insensitive repo prefix', () => {
-    const desc = 'Repo: https://github.com/myorg/my-app';
-    expect(extractRepoUrl(desc)).toBe('https://github.com/myorg/my-app');
+  it('returns repos for a board with multiple repos', () => {
+    expect(getBoardRepos('board-multi')).toEqual([
+      'https://github.com/myorg/frontend',
+      'https://github.com/myorg/backend',
+    ]);
   });
 
-  it('returns null when no repo URL found', () => {
-    const desc = 'Fix the login bug on the main page';
-    // Also ensure DEFAULT_GITHUB_REPO is not set
-    delete process.env.DEFAULT_GITHUB_REPO;
-    expect(extractRepoUrl(desc)).toBeNull();
+  it('returns empty array for a board with no repos', () => {
+    expect(getBoardRepos('board-empty')).toEqual([]);
   });
 
-  it('returns DEFAULT_GITHUB_REPO env var as fallback', () => {
-    process.env.DEFAULT_GITHUB_REPO = 'https://github.com/myorg/default-repo';
-    const desc = 'Fix the login bug';
-    expect(extractRepoUrl(desc)).toBe('https://github.com/myorg/default-repo');
-    delete process.env.DEFAULT_GITHUB_REPO;
+  it('returns empty array for an unknown board', () => {
+    expect(getBoardRepos('board-unknown')).toEqual([]);
   });
 });

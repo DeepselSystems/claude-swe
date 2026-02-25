@@ -1,6 +1,5 @@
 export interface RunTaskOptions {
   cardShortLink: string;
-  repoUrl: string;
   branchName: string;
   prompt: string;
   /** If true, re-use existing workspace (for feedback on existing PR) */

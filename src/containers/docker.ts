@@ -19,7 +19,7 @@ export class DockerBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, repoUrl, branchName, prompt, isFollowUp, doneListId } = opts;
+    const { cardShortLink, prompt, doneListId } = opts;
     const name = this.containerName(cardShortLink);
     const vol = this.volumeName(cardShortLink);
     const log = logger.child({ container: name });
@@ -44,12 +44,6 @@ export class DockerBackend implements ContainerBackend {
       log.info('Removed previous container');
     } catch {
       // No existing container — that's fine
-    }
-
-    if (!isFollowUp) {
-      await this.cloneRepoIntoVolume(vol, repoUrl, branchName, log);
-    } else {
-      await this.fetchBranchInVolume(vol, branchName, log);
     }
 
     const container = await this.docker.createContainer({
@@ -89,62 +83,6 @@ export class DockerBackend implements ContainerBackend {
     await container.remove({ force: true });
 
     return { exitCode: StatusCode, logs };
-  }
-
-  private async cloneRepoIntoVolume(
-    vol: string,
-    repoUrl: string,
-    branchName: string,
-    log: typeof logger,
-  ): Promise<void> {
-    const authedUrl = repoUrl.replace('https://', `https://oauth2:${config.github.token ?? ''}@`);
-
-    const container = await this.docker.createContainer({
-      Image: 'alpine/git:latest',
-      Cmd: [
-        'sh', '-c',
-        `git clone --depth 50 ${authedUrl} /workspace && cd /workspace && git checkout -b ${branchName}`,
-      ],
-      HostConfig: { Binds: [`${vol}:/workspace`] },
-    });
-
-    await container.start();
-    const { StatusCode } = await container.wait();
-
-    const logStream = await container.logs({ stdout: true, stderr: true });
-    const output = logStream.toString('utf8');
-    await container.remove({ force: true });
-
-    if (StatusCode !== 0) {
-      throw new Error(`Failed to clone repo (exit ${StatusCode}): ${output}`);
-    }
-
-    log.info({ repoUrl, branchName }, 'Repo cloned into volume');
-  }
-
-  private async fetchBranchInVolume(
-    vol: string,
-    branchName: string,
-    log: typeof logger,
-  ): Promise<void> {
-    const container = await this.docker.createContainer({
-      Image: 'alpine/git:latest',
-      Cmd: [
-        'sh', '-c',
-        `cd /workspace && git fetch origin && git checkout ${branchName} && git pull origin ${branchName} || true`,
-      ],
-      HostConfig: { Binds: [`${vol}:/workspace`] },
-    });
-
-    await container.start();
-    const { StatusCode } = await container.wait();
-    await container.remove({ force: true });
-
-    if (StatusCode !== 0) {
-      log.warn({ branchName }, 'fetch/checkout had non-zero exit — may be first push');
-    }
-
-    log.info({ branchName }, 'Branch checked out in volume');
   }
 
   async destroyTask(cardShortLink: string): Promise<void> {

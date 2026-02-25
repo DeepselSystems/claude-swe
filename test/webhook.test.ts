@@ -3,20 +3,32 @@ import crypto from 'crypto';
 
 vi.mock('../src/config.js', () => ({
   config: {
-    TRELLO_API_KEY: 'test-key',
-    TRELLO_TOKEN: 'test-token',
-    TRELLO_WEBHOOK_SECRET: 'test-secret',
-    TRELLO_DONE_LIST_ID: 'list-done',
-    TRELLO_BOARD_ID: 'board-1',
-    GITHUB_TOKEN: 'gh-token',
-    GITHUB_WEBHOOK_SECRET: 'gh-secret',
-    ANTHROPIC_API_KEY: 'anth-key',
-    WEBHOOK_BASE_URL: 'https://example.com',
-    WORKER_IMAGE: 'claude-swe-worker:latest',
-    REDIS_HOST: 'localhost',
-    REDIS_PORT: 6379,
-    PORT: 3000,
+    trello: {
+      apiKey: 'test-key',
+      token: 'test-token',
+      botUsername: 'claude',
+      boards: [
+        { id: 'board-1', includeLists: [], repos: [], done: { listId: 'list-done' } },
+      ],
+    },
+    github: {
+      token: 'gh-token',
+      webhookSecret: 'gh-secret',
+    },
+    anthropic: { apiKey: 'anth-key' },
+    server: {
+      port: 3000,
+      webhookBaseUrl: 'https://example.com',
+    },
+    redis: { host: 'localhost', port: 6379 },
+    containers: { backend: 'docker', workerImage: 'claude-swe-worker:latest' },
   },
+  getBoardConfig: vi.fn().mockImplementation((boardId: string) => {
+    if (boardId === 'board-1') {
+      return { id: 'board-1', includeLists: [], repos: [], done: { listId: 'list-done' } };
+    }
+    return undefined;
+  }),
 }));
 
 vi.mock('../src/queue/queue.js', () => ({
@@ -115,7 +127,7 @@ describe('handleTrelloWebhook', () => {
     };
 
     const bodyStr = JSON.stringify(payload);
-    const sig = makeTrelloSignature(bodyStr, 'test-secret', 'https://example.com');
+    const sig = makeTrelloSignature(bodyStr, 'test-token', 'https://example.com');
     const req = {
       method: 'POST',
       headers: { 'x-trello-webhook': sig },
@@ -154,7 +166,7 @@ describe('handleTrelloWebhook', () => {
     };
 
     const bodyStr = JSON.stringify(payload);
-    const sig = makeTrelloSignature(bodyStr, 'test-secret', 'https://example.com');
+    const sig = makeTrelloSignature(bodyStr, 'test-token', 'https://example.com');
     const req = {
       method: 'POST',
       headers: { 'x-trello-webhook': sig },
