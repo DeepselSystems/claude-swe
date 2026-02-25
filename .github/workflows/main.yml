@@ -26,7 +26,9 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=ghcr.io/$OWNER/$REPO
           SHA=${GITHUB_SHA::7}
           DATE=$(date -u +%Y%m%d%H%M%S)
           TAG=$DATE-$SHA
