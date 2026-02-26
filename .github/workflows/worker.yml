@@ -1,9 +1,11 @@
-name: Claude SWE Main CI/CD Pipeline
+name: Build Worker Image
 
 on:
   push:
     branches:
       - main
+    paths:
+      - Dockerfile.worker
 
 jobs:
   build:
@@ -24,14 +26,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Orchestrator Image
+      - name: Build and Push Worker Image
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE=ghcr.io/$OWNER/$REPO
+          IMAGE=ghcr.io/$OWNER/$REPO-worker
           SHA=${GITHUB_SHA::7}
           DATE=$(date -u +%Y%m%d%H%M%S)
           TAG=$DATE-$SHA
-          docker build -t $IMAGE:$TAG .
+          docker build -f Dockerfile.worker -t $IMAGE:latest -t $IMAGE:$TAG .
           docker push $IMAGE:$TAG
-          echo "✅ Pushed orchestrator image: $IMAGE:$TAG"
+          docker push $IMAGE:latest
+          echo "✅ Pushed worker image: $IMAGE:$TAG"
