@@ -2,7 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { runTaskInContainer, destroyTaskContainer } from '../containers/manager.js';
-import { buildNewTaskPrompt, buildFeedbackPrompt } from '../agent/prompt.js';
+import { buildPlanPrompt, buildExecutePrompt, buildFeedbackPrompt } from '../agent/prompt.js';
 import { getBoardRepos } from '../workspace/repo.js';
 import { postTrelloComment } from '../trello/api.js';
 import type { NewTaskJob, FeedbackJob, CleanupJob } from '../webhook/types.js';
@@ -42,24 +42,21 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
   const repos = getBoardRepos(boardId);
   log.info({ branchName, repos }, 'Resolved branch and repos for task');
 
-  const prompt = buildNewTaskPrompt({
-    cardId,
-    cardName,
-    cardUrl,
-    repos,
-    imageDir: '/workspace/.card-images',
-  });
-  log.info({ promptLength: prompt.length }, 'Built new-task prompt');
+  const promptOpts = { cardId, cardName, cardUrl, repos, imageDir: '/workspace/.card-images' };
+  const planPrompt = buildPlanPrompt(promptOpts);
+  const executePrompt = buildExecutePrompt(promptOpts);
+  log.info({ planPromptLength: planPrompt.length, executePromptLength: executePrompt.length }, 'Built two-phase prompts');
 
   try {
-    log.info('Handing off to container backend — starting worker container');
+    log.info('Handing off to container backend — starting worker container (Opus plan → Sonnet execute)');
     const startTime = Date.now();
 
     const { exitCode, logs } = await runTaskInContainer({
       cardShortLink,
       cardId,
       branchName,
-      prompt,
+      planPrompt,
+      executePrompt,
       isFollowUp: false,
       doneListId: job.data.doneListId,
     });

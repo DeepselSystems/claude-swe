@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - Dockerfile.worker
+      - worker-entrypoint.sh
+      - mcp/trello-server/**
 
 jobs:
   build:

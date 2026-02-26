@@ -46,7 +46,7 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, doneListId } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId } = opts;
     const jobName = this.jobName(cardShortLink);
     const pvcName = this.pvcName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'k8s', job: jobName, namespace: this.namespace });
@@ -90,7 +90,14 @@ export class KubernetesBackend implements ContainerBackend {
                 image: config.containers.workerImage,
                 imagePullPolicy: 'Always',
                 env: [
-                  { name: 'CLAUDE_PROMPT',        value: prompt },
+                  ...(isTwoPhase
+                    ? [
+                        { name: 'CLAUDE_PLAN_PROMPT',    value: planPrompt },
+                        { name: 'CLAUDE_EXECUTE_PROMPT', value: executePrompt },
+                      ]
+                    : [
+                        { name: 'CLAUDE_PROMPT', value: prompt ?? '' },
+                      ]),
                   { name: 'ANTHROPIC_API_KEY',     value: config.anthropic.apiKey ?? '' },
                   { name: 'GITHUB_TOKEN',          value: config.github.token ?? '' },
                   { name: 'TRELLO_API_KEY',        value: config.trello.apiKey ?? '' },
@@ -126,6 +133,7 @@ export class KubernetesBackend implements ContainerBackend {
       },
     };
 
+    const isTwoPhase = !!(planPrompt && executePrompt);
     log.info(
       {
         image: config.containers.workerImage,
@@ -133,7 +141,10 @@ export class KubernetesBackend implements ContainerBackend {
         memoryLimit: '4Gi',
         cpuRequest: '500m',
         pvcName,
-        envVars: ['CLAUDE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM'],
+        mode: isTwoPhase ? 'two-phase' : 'single-phase',
+        envVars: isTwoPhase
+          ? ['CLAUDE_PLAN_PROMPT', 'CLAUDE_EXECUTE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM']
+          : ['CLAUDE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM'],
       },
       'Creating K8s job',
     );

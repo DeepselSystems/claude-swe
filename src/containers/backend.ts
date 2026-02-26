@@ -3,7 +3,12 @@ export interface RunTaskOptions {
   /** Full Trello card ID, used by the worker container to download card images */
   cardId: string;
   branchName: string;
-  prompt: string;
+  /** Single-phase prompt (used for feedback jobs) */
+  prompt?: string;
+  /** Two-phase new-task: planning prompt for Opus */
+  planPrompt?: string;
+  /** Two-phase new-task: execution prompt for Sonnet */
+  executePrompt?: string;
   /** If true, re-use existing workspace (for feedback on existing PR) */
   isFollowUp: boolean;
   /** Done list ID to pass to the worker container, if card should be moved on completion */

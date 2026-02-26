@@ -46,7 +46,32 @@ chown -R worker:worker /workspace
 # Run Claude Code as non-root — --dangerously-skip-permissions requires a non-root user
 # stdbuf -oL forces line-buffered stdout so logs are visible in real-time via kubectl logs
 cd /workspace
-exec gosu worker stdbuf -oL claude \
-  --print \
-  --dangerously-skip-permissions \
-  "${CLAUDE_PROMPT}"
+
+if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
+  # Two-phase: Opus plans, Sonnet executes (new tasks)
+  echo "=== Phase 1: Planning with Opus ==="
+  gosu worker stdbuf -oL claude \
+    --print \
+    --model opus \
+    --dangerously-skip-permissions \
+    "${CLAUDE_PLAN_PROMPT}"
+
+  if [ ! -f /workspace/.plan.md ]; then
+    echo "ERROR: Planning phase did not produce /workspace/.plan.md — aborting" >&2
+    exit 1
+  fi
+
+  echo "=== Phase 2: Executing with Sonnet ==="
+  exec gosu worker stdbuf -oL claude \
+    --print \
+    --model sonnet \
+    --dangerously-skip-permissions \
+    "${CLAUDE_EXECUTE_PROMPT}"
+else
+  # Single-phase: Sonnet only (feedback jobs)
+  exec gosu worker stdbuf -oL claude \
+    --print \
+    --model sonnet \
+    --dangerously-skip-permissions \
+    "${CLAUDE_PROMPT}"
+fi

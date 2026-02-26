@@ -29,6 +29,130 @@ function repoToSlug(url: string): string {
   return url.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
 }
 
+export function buildPlanPrompt(opts: NewTaskPromptOptions): string {
+  const { cardId, cardName, cardUrl, repos, imageDir } = opts;
+
+  const imageSection = imageDir
+    ? `
+## Visual References
+
+Screenshots and mockups from the Trello card have been saved to ${imageDir}/.
+Check this directory after reading the card — if it contains images, study them carefully
+as they are the visual specification for this task. Document what you observe in the plan.
+`
+    : '';
+
+  return `
+You are a senior software architect planning a task for another AI agent to implement.
+
+## Your Task
+
+Trello card: "${cardName}"
+Card URL: ${cardUrl}
+Card ID: ${cardId}
+
+Use the trello MCP server tools to read the full card details (description, checklists,
+any additional context). The card contains the full specification for what needs to be done.
+${imageSection}
+## Repository
+
+${buildRepoSection(repos)}
+
+## What You Must Do
+
+1. Read the Trello card fully using the trello MCP \`get_card\` tool
+2. Clone the target repo into /workspace and \`cd\` into it
+3. Create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
+4. Run \`mise install\` if a runtime config file exists, then install project dependencies:
+   | File present | Command |
+   |---|---|
+   | \`package-lock.json\` | \`npm ci\` |
+   | \`yarn.lock\` | \`yarn install --frozen-lockfile\` |
+   | \`pnpm-lock.yaml\` | \`pnpm install --frozen-lockfile\` |
+   | \`bun.lockb\` | \`bun install\` |
+   | \`requirements.txt\` | \`pip install -r requirements.txt\` |
+   | \`pyproject.toml\` + poetry | \`poetry install\` |
+   | \`pyproject.toml\` + uv | \`uv sync\` |
+   | \`Pipfile\` | \`pipenv install\` |
+   | \`go.mod\` | \`go mod download\` |
+   | \`Cargo.toml\` | \`cargo fetch\` |
+   | \`Gemfile\` | \`bundle install\` |
+5. Explore the codebase thoroughly:
+   - Understand the directory structure and architecture
+   - Find existing code patterns and conventions (naming, formatting, imports)
+   - Locate the test suite and understand how tests are written and run
+   - Identify which files are most relevant to this task
+6. Write a detailed implementation plan to /workspace/.plan.md with the following sections:
+   - **Task Summary**: One paragraph describing what needs to be done and why
+   - **Codebase Context**: Key conventions, patterns, and constraints you observed
+   - **Setup**: Runtime/dependency install commands already run (so the executor can skip them)
+   - **Files to Modify**: For each file, list the specific changes needed
+   - **Files to Create**: For each new file, describe its purpose and content
+   - **Test Strategy**: Which tests to run, what new tests to write
+   - **Visual Verification**: If this is a frontend task, describe what pages/components to screenshot and what they should look like
+   - **Done Criteria**: Exact conditions that must be true for the task to be complete
+
+## Critical Rules
+
+- Do NOT write any implementation code — only the plan
+- Do NOT open PRs, move the Trello card, or post comments
+- The plan must be specific enough that another agent can implement it without reading the card again
+- If anything in the card is ambiguous, document your interpretation in the plan
+`.trim();
+}
+
+export function buildExecutePrompt(opts: NewTaskPromptOptions): string {
+  const { cardId, cardUrl, imageDir } = opts;
+
+  const imageSection = imageDir
+    ? `
+## Visual References
+
+If this task involves frontend or UI changes, reference images are in ${imageDir}/.
+After implementing, use the Playwright MCP server to verify your work:
+1. Start the dev server (e.g. \`npm run dev\`)
+2. Navigate to the relevant pages and take screenshots
+3. Compare against the reference images — iterate until they match
+4. Paste a final screenshot into the PR description as evidence
+`
+    : '';
+
+  return `
+You are an autonomous software engineer implementing a planned task.
+
+## Context
+
+Trello card: ${cardUrl}
+Card ID: ${cardId}
+
+The workspace is already prepared:
+- The repo has been cloned into /workspace
+- The branch \`claude/${cardId.slice(-6)}\` has been created and checked out
+- Runtime and dependencies have been installed
+- A detailed implementation plan is at /workspace/.plan.md
+${imageSection}
+## Steps to Complete
+
+1. Read /workspace/.plan.md — this is your specification, follow it precisely
+2. Implement every change described in the plan
+3. Run the test suite as specified in the plan — fix any failures before proceeding
+4. If this is a frontend task, perform visual verification as described in the plan
+5. Commit all changes with a clear, descriptive message
+6. Push the branch and open a PR using the gh CLI:
+   \`gh pr create --title "<task name>" --body "<summary of changes>"\`
+   If this was a frontend task, paste a final Playwright screenshot into the PR body
+7. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
+8. Post the PR URL as a comment on the Trello card using the trello MCP \`add_comment\` tool
+
+## Important Rules
+
+- Follow the plan — if you need to deviate, document why in the PR body
+- Do NOT move the card to Done until all tests pass
+- Do NOT open a PR if there are failing tests
+- Write clean, idiomatic code that matches the existing codebase style
+`.trim();
+}
+
 export function buildNewTaskPrompt(opts: NewTaskPromptOptions): string {
   const { cardId, cardName, cardUrl, repos, imageDir } = opts;
 

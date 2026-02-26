@@ -19,7 +19,7 @@ export class DockerBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, doneListId } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId } = opts;
     const name = this.containerName(cardShortLink);
     const vol = this.volumeName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'docker', container: name });
@@ -50,13 +50,17 @@ export class DockerBackend implements ContainerBackend {
     const image = config.containers.workerImage;
     const memoryMb = 4 * 1024;
     const shmMb = 256;
+    const isTwoPhase = !!(planPrompt && executePrompt);
     log.info(
       {
         image,
         memoryMb,
         shmMb,
         volume: vol,
-        envVars: ['CLAUDE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM'],
+        mode: isTwoPhase ? 'two-phase' : 'single-phase',
+        envVars: isTwoPhase
+          ? ['CLAUDE_PLAN_PROMPT', 'CLAUDE_EXECUTE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM']
+          : ['CLAUDE_PROMPT', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'TRELLO_API_KEY', 'TRELLO_TOKEN', 'CARD_ID', 'TRELLO_DONE_LIST_ID', 'CI', 'TERM'],
       },
       'Creating worker container',
     );
@@ -65,7 +69,9 @@ export class DockerBackend implements ContainerBackend {
       name,
       Image: image,
       Env: [
-        `CLAUDE_PROMPT=${prompt}`,
+        ...(isTwoPhase
+          ? [`CLAUDE_PLAN_PROMPT=${planPrompt}`, `CLAUDE_EXECUTE_PROMPT=${executePrompt}`]
+          : [`CLAUDE_PROMPT=${prompt ?? ''}`]),
         `ANTHROPIC_API_KEY=${config.anthropic.apiKey ?? ''}`,
         `GITHUB_TOKEN=${config.github.token ?? ''}`,
         `TRELLO_API_KEY=${config.trello.apiKey ?? ''}`,
