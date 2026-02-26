@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     pkg-config \
     unzip \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # mise — universal runtime version manager
@@ -43,6 +44,10 @@ COPY mcp/trello-server/package.json mcp/trello-server/package-lock.json* ./
 RUN npm ci
 COPY mcp/trello-server/ ./
 RUN npm run build
+
+# Create a non-root user — claude --dangerously-skip-permissions refuses to run as root.
+# The entrypoint runs as root for setup, then uses gosu to drop to this user for claude.
+RUN useradd -m -u 1001 -s /bin/bash worker && mkdir -p /workspace
 
 # Working directory for cloned repos — this path gets a persistent volume
 WORKDIR /workspace

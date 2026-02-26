@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Activate mise so runtime shims work
-eval "$(/root/.local/bin/mise activate bash)"
+eval "$(/root/.local/bin/mise activate bash)" 2>/dev/null || true
 
 # Write .claude/settings.local.json with MCP server configs
 mkdir -p /workspace/.claude
@@ -40,9 +40,13 @@ git config --global --add safe.directory /workspace
 # Auth gh CLI
 echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true
 
-# Run Claude Code with the prompt passed via CLAUDE_PROMPT env var
+# Ensure worker user owns the workspace (PVC may be root-owned on first mount)
+chown -R worker:worker /workspace
+
+# Run Claude Code as non-root — --dangerously-skip-permissions requires a non-root user
+# stdbuf -oL forces line-buffered stdout so logs are visible in real-time via kubectl logs
 cd /workspace
-exec claude \
+exec gosu worker stdbuf -oL claude \
   --print \
   --dangerously-skip-permissions \
   "${CLAUDE_PROMPT}"

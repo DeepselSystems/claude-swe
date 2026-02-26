@@ -88,6 +88,7 @@ export class KubernetesBackend implements ContainerBackend {
               {
                 name: 'worker',
                 image: config.containers.workerImage,
+                imagePullPolicy: 'Always',
                 env: [
                   { name: 'CLAUDE_PROMPT',        value: prompt },
                   { name: 'ANTHROPIC_API_KEY',     value: config.anthropic.apiKey ?? '' },
