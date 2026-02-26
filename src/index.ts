@@ -50,7 +50,7 @@ async function ensureTrelloWebhooks(): Promise<void> {
     return;
   }
 
-  let existing: Array<{ idModel: string; callbackURL: string }>;
+  let existing: Array<{ id: string; idModel: string; callbackURL: string }>;
   try {
     const res = await fetch(
       `https://api.trello.com/1/tokens/${token}/webhooks?key=${apiKey}&token=${token}`,
@@ -63,22 +63,45 @@ async function ensureTrelloWebhooks(): Promise<void> {
 
   for (const board of boards) {
     const callbackURL = `${webhookBaseUrl}/webhooks/trello`;
-    const alreadyRegistered = existing.some(
-      (w) => w.idModel === board.id && w.callbackURL === callbackURL,
-    );
+    const match = existing.find((w) => w.idModel === board.id);
 
-    if (alreadyRegistered) {
+    if (match?.callbackURL === callbackURL) {
       logger.info({ boardId: board.id }, 'Trello webhook already registered');
       continue;
     }
 
+    if (match) {
+      // Webhook exists but points to a stale URL — update it in place
+      try {
+        const res = await fetch(`https://api.trello.com/1/webhooks/${match.id}?key=${apiKey}&token=${token}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callbackURL }),
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          logger.warn({ boardId: board.id, status: res.status, body, oldUrl: match.callbackURL }, 'Failed to update stale Trello webhook');
+        } else {
+          logger.info({ boardId: board.id, oldUrl: match.callbackURL, newUrl: callbackURL }, 'Updated stale Trello webhook');
+        }
+      } catch (err) {
+        logger.warn({ boardId: board.id, err }, 'Failed to update stale Trello webhook');
+      }
+      continue;
+    }
+
     try {
-      await fetch(`https://api.trello.com/1/webhooks?key=${apiKey}&token=${token}`, {
+      const res = await fetch(`https://api.trello.com/1/webhooks?key=${apiKey}&token=${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callbackURL, idModel: board.id, description: 'Claude SWE Agent' }),
       });
-      logger.info({ boardId: board.id }, 'Registered Trello webhook');
+      if (!res.ok) {
+        const body = await res.text();
+        logger.warn({ boardId: board.id, status: res.status, body }, 'Failed to register Trello webhook');
+      } else {
+        logger.info({ boardId: board.id }, 'Registered Trello webhook');
+      }
     } catch (err) {
       logger.warn({ boardId: board.id, err }, 'Failed to register Trello webhook');
     }
