@@ -38,11 +38,11 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   private jobName(cardShortLink: string): string {
-    return `${PREFIX}${cardShortLink}`;
+    return `${PREFIX}${cardShortLink.toLowerCase()}`;
   }
 
   private pvcName(cardShortLink: string): string {
-    return `${PREFIX}vol-${cardShortLink}`;
+    return `${PREFIX}vol-${cardShortLink.toLowerCase()}`;
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
