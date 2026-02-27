@@ -9,20 +9,28 @@ interface NewTaskPromptOptions {
 function buildRepoSection(repos: string[]): string {
   if (repos.length === 0) {
     return `No repos are pre-configured for this board. Read the Trello card to determine the target repo,
-then clone it with \`gh repo clone <owner>/<repo>\`.`;
+then clone it with \`gh repo clone <owner>/<repo>\`.
+After cloning, read \`CLAUDE.md\` in the repo root if it exists — it contains project-specific instructions.`;
   }
   if (repos.length === 1) {
     return `The configured repo for this board is:
 - ${repos[0]}
 
 Clone it with \`gh repo clone ${repoToSlug(repos[0])}\`.
+After cloning, read \`CLAUDE.md\` in the repo root if it exists — it contains project-specific instructions.
 If the card refers to a different repo, clone that one instead.`;
   }
-  return `The following repos are configured for this board:
+  const cloneCommands = repos.map((r) => `  gh repo clone ${repoToSlug(r)}`).join('\n');
+  return `The following repos are configured for this board — clone all of them, as this task may span multiple:
 ${repos.map((r) => `- ${r}`).join('\n')}
 
-Read the Trello card to determine which repo this task belongs to, then clone it with \`gh repo clone <owner>/<repo>\`.
-If the task requires a repo not in this list, clone that one instead.`;
+\`\`\`bash
+cd /workspace
+${cloneCommands}
+\`\`\`
+
+After cloning each repo, read its \`CLAUDE.md\` if present — it contains project-specific instructions for that codebase.
+Work in whichever repos the task requires. Open a separate PR in each repo that has changes.`;
 }
 
 function repoToSlug(url: string): string {
@@ -61,8 +69,8 @@ ${buildRepoSection(repos)}
 ## What You Must Do
 
 1. Read the Trello card fully using the trello MCP \`get_card\` tool
-2. Clone the target repo into /workspace and \`cd\` into it
-3. Create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
+2. Clone the repo(s) into /workspace as described above
+3. In each repo you will modify, create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
 4. Run \`mise install\` if a runtime config file exists, then install project dependencies:
    | File present | Command |
    |---|---|
@@ -78,6 +86,7 @@ ${buildRepoSection(repos)}
    | \`Cargo.toml\` | \`cargo fetch\` |
    | \`Gemfile\` | \`bundle install\` |
 5. Explore the codebase thoroughly:
+   - If a \`CLAUDE.md\` exists in the repo root, read it first — it contains project-specific instructions
    - Understand the directory structure and architecture
    - Find existing code patterns and conventions (naming, formatting, imports)
    - Locate the test suite and understand how tests are written and run
@@ -126,8 +135,8 @@ Trello card: ${cardUrl}
 Card ID: ${cardId}
 
 The workspace is already prepared:
-- The repo has been cloned into /workspace
-- The branch \`claude/${cardId.slice(-6)}\` has been created and checked out
+- The repo(s) have been cloned into /workspace (each in its own subdirectory)
+- The branch \`claude/${cardId.slice(-6)}\` has been created and checked out in each repo that requires changes
 - Runtime and dependencies have been installed
 - A detailed implementation plan is at /workspace/.plan.md
 ${imageSection}
@@ -137,12 +146,12 @@ ${imageSection}
 2. Implement every change described in the plan
 3. Run the test suite as specified in the plan — fix any failures before proceeding
 4. If this is a frontend task, perform visual verification as described in the plan
-5. Commit all changes with a clear, descriptive message
-6. Push the branch and open a PR using the gh CLI:
+5. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
+6. For each repo with changes, push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
    If this was a frontend task, paste a final Playwright screenshot into the PR body
 7. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
-8. Post the PR URL as a comment on the Trello card using the trello MCP \`add_comment\` tool
+8. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
 
 ## Important Rules
 
@@ -197,9 +206,9 @@ ${buildRepoSection(repos)}
 ## Steps to Complete
 
 1. Read the Trello card fully using the trello MCP \`get_card\` tool
-2. Clone the target repo into /workspace and \`cd\` into it
-3. Create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
-4. Explore the codebase to understand its structure and conventions
+2. Clone the repo(s) into /workspace as described above
+3. In each repo you will modify, create a new branch: \`git checkout -b claude/${cardId.slice(-6)}\`
+4. In each repo, read \`CLAUDE.md\` in the root if it exists, then explore the codebase to understand its structure and conventions
 5. Set up the runtime and install dependencies:
    - If a \`.mise.toml\`, \`.tool-versions\`, \`.nvmrc\`, or \`.python-version\` file exists,
      run \`mise install\` first to install the correct runtime version
@@ -226,12 +235,12 @@ ${buildRepoSection(repos)}
    c. Use the Playwright MCP server to navigate to the relevant pages and take screenshots
    d. Compare your screenshots against the reference images — iterate until they match
    e. Do not move forward until the UI visually matches the designs
-9. Commit all changes with a clear, descriptive message
-10. Push the branch and open a PR using the gh CLI:
+9. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
+10. For each repo with changes, push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
    If this was a frontend task, paste a final Playwright screenshot into the PR body
 11. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
-12. Post the PR URL as a comment on the Trello card using the trello MCP \`add_comment\` tool
+12. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
 
 ## Important Rules
 
@@ -266,15 +275,16 @@ Comment: "${commentText}"
 
 1. Read the Trello card using the trello MCP \`get_card\` tool for full context
 2. Understand what change or fix the reviewer is asking for
-3. Run \`mise install\` if a runtime config file exists, then install project dependencies
-4. Implement the requested changes
-5. Run the test suite and ensure all tests pass
-6. If the feedback relates to UI or visual appearance:
+3. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions
+4. Run \`mise install\` if a runtime config file exists, then install project dependencies
+5. Implement the requested changes
+6. Run the test suite and ensure all tests pass
+7. If the feedback relates to UI or visual appearance:
    a. Check /workspace/.card-images/ for any reference screenshots on the card
    b. Start the dev server and use the Playwright MCP server to take screenshots
    c. Verify the updated UI looks correct before committing
-7. Commit and push your changes to the existing PR branch
-8. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
+8. Commit and push your changes to the existing PR branch(es)
+9. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
    what you changed in response to the feedback
 
 ## Important Rules
