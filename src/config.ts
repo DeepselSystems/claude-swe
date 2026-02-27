@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { z } from 'zod';
+import { fetchMyBoards, fetchBoardLists } from './trello/api.js';
 
 // Recursively resolve "env.KEY" references in parsed JSON.
 // Any string value starting with "env." is replaced with process.env[KEY] ?? null.
@@ -20,11 +21,15 @@ function resolveEnvRefs(value: unknown): unknown {
 }
 
 const boardSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
   includeLists: z.array(z.string()).default([]),
-  done: z.object({ listId: z.string().min(1) }).optional(),
+  done: z.object({
+    listId: z.string().min(1).optional(),
+    list: z.string().min(1).optional(),
+  }).optional(),
   repos: z.array(z.string().url()).default([]),
-});
+}).refine((b) => b.id || b.name, { message: 'Board must have either id or name' });
 
 const configSchema = z.object({
   trello: z.object({
@@ -60,7 +65,7 @@ const configSchema = z.object({
 });
 
 export type Config = z.infer<typeof configSchema>;
-export type BoardConfig = z.infer<typeof boardSchema>;
+export type BoardConfig = z.infer<typeof boardSchema> & { id: string };
 
 const configPath = process.env.CONFIG_PATH ?? './config.json';
 
@@ -86,5 +91,69 @@ if (!parsed.success) {
 export const config = parsed.data;
 
 export function getBoardConfig(boardId: string): BoardConfig | undefined {
-  return config.trello.boards.find((b) => b.id === boardId);
+  return config.trello.boards.find((b) => b.id === boardId) as BoardConfig | undefined;
+}
+
+// Resolve board/list names to IDs at startup using the Trello API.
+// Mutates config.trello.boards in-place.
+export async function resolveNames(): Promise<void> {
+  const boards = config.trello.boards;
+  if (boards.length === 0) return;
+
+  const hasAnyName = boards.some((b) => !b.id || b.includeLists.some((l) => !isId(l)) || b.done?.list);
+  if (!hasAnyName) return;
+
+  let allBoards: { id: string; name: string }[];
+  try {
+    allBoards = await fetchMyBoards();
+  } catch (err) {
+    throw new Error(`Failed to fetch Trello boards for name resolution: ${err}`);
+  }
+
+  for (const board of boards) {
+    // Resolve board name → ID
+    if (!board.id) {
+      const match = allBoards.find((b) => b.name === board.name);
+      if (!match) {
+        throw new Error(`Trello board not found by name: "${board.name}"`);
+      }
+      board.id = match.id;
+    }
+
+    const needsListResolution =
+      board.includeLists.some((l) => !isId(l)) || (board.done?.list && !board.done.listId);
+
+    if (!needsListResolution) continue;
+
+    let lists: { id: string; name: string }[];
+    try {
+      lists = await fetchBoardLists(board.id);
+    } catch (err) {
+      throw new Error(`Failed to fetch lists for board "${board.name ?? board.id}": ${err}`);
+    }
+
+    // Resolve includeLists names → IDs
+    board.includeLists = board.includeLists.map((entry) => {
+      if (isId(entry)) return entry;
+      const match = lists.find((l) => l.name === entry);
+      if (!match) {
+        throw new Error(`List not found by name "${entry}" on board "${board.name ?? board.id}"`);
+      }
+      return match.id;
+    });
+
+    // Resolve done.list name → done.listId
+    if (board.done?.list && !board.done.listId) {
+      const match = lists.find((l) => l.name === board.done!.list);
+      if (!match) {
+        throw new Error(`Done list not found by name "${board.done.list}" on board "${board.name ?? board.id}"`);
+      }
+      board.done.listId = match.id;
+    }
+  }
+}
+
+// Trello IDs are 24-character hex strings. Use this to distinguish IDs from names.
+function isId(value: string): boolean {
+  return /^[0-9a-f]{24}$/.test(value);
 }

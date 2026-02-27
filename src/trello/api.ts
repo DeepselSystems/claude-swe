@@ -53,3 +53,21 @@ export interface TrelloCardFull {
 export async function fetchCard(cardId: string): Promise<TrelloCardFull> {
   return trelloFetch<TrelloCardFull>(`/cards/${cardId}?fields=id,shortLink,name,desc,idList,url`);
 }
+
+export interface TrelloBoard {
+  id: string;
+  name: string;
+}
+
+export interface TrelloList {
+  id: string;
+  name: string;
+}
+
+export async function fetchMyBoards(): Promise<TrelloBoard[]> {
+  return trelloFetch<TrelloBoard[]>('/members/me/boards?fields=id,name');
+}
+
+export async function fetchBoardLists(boardId: string): Promise<TrelloList[]> {
+  return trelloFetch<TrelloList[]>(`/boards/${boardId}/lists?fields=id,name`);
+}

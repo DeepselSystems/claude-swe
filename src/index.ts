@@ -1,5 +1,5 @@
 import express from 'express';
-import { config } from './config.js';
+import { config, resolveNames } from './config.js';
 import { logger } from './logger.js';
 import { handleTrelloWebhook, handleGitHubWebhook } from './webhook/handler.js';
 import { listWorkerContainers } from './containers/manager.js';
@@ -114,6 +114,7 @@ process.on('unhandledRejection', (reason) => {
 
 (async () => {
   await initBotMemberId();
+  await resolveNames();
   await ensureTrelloWebhooks();
 
   const server = app.listen(config.server.port, () => {
