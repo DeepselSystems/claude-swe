@@ -12,6 +12,7 @@ import type {
   NewTaskJob,
   FeedbackJob,
   CleanupJob,
+  CancelJob,
 } from './types.js';
 
 // --- Trello webhook ---
@@ -151,6 +152,56 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
     logger.info(
       { phase: 'webhook', cardId: card.id, cardShortLink: card.shortLink, cardName: card.name },
       'Enqueued new-task job',
+    );
+    return;
+  }
+
+  if (type === 'removeMemberFromCard') {
+    const card = data.card;
+    const member = data.member;
+    const board = data.board;
+
+    if (!card || !board) {
+      logger.warn({ phase: 'webhook', actionType: type }, 'removeMemberFromCard missing card or board data — ignoring');
+      return;
+    }
+
+    const boardConfig = getBoardConfig(board.id);
+    if (!boardConfig) {
+      logger.info({ phase: 'webhook', boardId: board.id }, 'Board not configured — ignoring removeMemberFromCard');
+      return;
+    }
+
+    const removedId = data.idMember ?? member?.id;
+    if (!botMemberId || removedId !== botMemberId) {
+      logger.info(
+        { phase: 'webhook', cardId: card.id, removedMemberId: removedId, botMemberId },
+        'Member removed is not the bot — ignoring',
+      );
+      return;
+    }
+
+    // Fetch full card to get shortLink if missing
+    let fullCard = card;
+    if (!card.shortLink) {
+      try {
+        fullCard = await fetchCard(card.id);
+      } catch (err) {
+        logger.warn({ err, phase: 'webhook', cardId: card.id }, 'Failed to fetch full card details — ignoring');
+        return;
+      }
+    }
+
+    const job: CancelJob = {
+      cardId: card.id,
+      cardShortLink: fullCard.shortLink,
+    };
+
+    await taskQueue.add('cancel', job);
+
+    logger.info(
+      { phase: 'webhook', cardId: card.id, cardShortLink: fullCard.shortLink },
+      'Enqueued cancel job — bot was removed from card',
     );
     return;
   }

@@ -25,7 +25,7 @@ export interface TrelloList {
 }
 
 // Action types we care about
-export type TrelloActionType = 'addMemberToCard' | 'commentCard';
+export type TrelloActionType = 'addMemberToCard' | 'removeMemberFromCard' | 'commentCard';
 
 export interface TrelloWebhookAction {
   id: string;
@@ -75,6 +75,11 @@ export interface CleanupJob {
   cardShortLink: string;
   prUrl?: string;
   reason: 'merged' | 'closed';
+}
+
+export interface CancelJob {
+  cardId: string;
+  cardShortLink: string;
 }
 
 // GitHub webhook payloads (subset of what we need)
