@@ -4,6 +4,22 @@ set -euo pipefail
 # Activate mise so runtime shims work
 eval "$(/root/.local/bin/mise activate bash)" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# Feedback fast-path: if the orchestrator wrote a prompt file to the workspace
+# (Docker: via putArchive into stopped container; K8s: via init container),
+# skip all setup and run claude directly with that prompt.
+# ---------------------------------------------------------------------------
+if [ -f /workspace/.feedback-prompt ]; then
+  PROMPT="$(cat /workspace/.feedback-prompt)"
+  rm /workspace/.feedback-prompt
+  cd /workspace
+  exec gosu worker stdbuf -oL claude \
+    --print \
+    --model sonnet \
+    --dangerously-skip-permissions \
+    "$PROMPT"
+fi
+
 # Write .claude/settings.local.json with MCP server configs
 mkdir -p /workspace/.claude
 cat > /workspace/.claude/settings.local.json <<MCPEOF

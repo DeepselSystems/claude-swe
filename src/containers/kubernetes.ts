@@ -46,7 +46,7 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId, isFollowUp } = opts;
     const jobName = this.jobName(cardShortLink);
     const pvcName = this.pvcName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'k8s', job: jobName, namespace: this.namespace });
@@ -69,6 +69,27 @@ export class KubernetesBackend implements ContainerBackend {
 
     const isTwoPhase = !!(planPrompt && executePrompt);
 
+    // For feedback runs: inject the prompt via an init container that writes
+    // .feedback-prompt to the PVC. The worker entrypoint detects this file and
+    // skips setup, running claude directly. Base64-encode to avoid shell escaping.
+    const initContainers: k8s.V1Container[] = isFollowUp ? [
+      {
+        name: 'write-prompt',
+        image: 'busybox',
+        command: ['sh', '-c', 'printf "%s" "$PROMPT_B64" | base64 -d > /workspace/.feedback-prompt'],
+        env: [
+          { name: 'PROMPT_B64', value: Buffer.from(prompt ?? '').toString('base64') },
+        ],
+        volumeMounts: [
+          { name: 'workspace', mountPath: '/workspace' },
+        ],
+      },
+    ] : [];
+
+    if (isFollowUp) {
+      log.info('Feedback run — init container will write prompt to PVC, worker will skip setup');
+    }
+
     const job: k8s.V1Job = {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -86,6 +107,7 @@ export class KubernetesBackend implements ContainerBackend {
           },
           spec: {
             restartPolicy: 'Never',
+            ...(initContainers.length > 0 ? { initContainers } : {}),
             containers: [
               {
                 name: 'worker',

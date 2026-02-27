@@ -269,22 +269,25 @@ You are an autonomous software engineer handling review feedback on a pull reque
 
 Trello card: ${cardUrl}
 Reviewer: ${commenterName}
-Comment: "${commentText}"
+Latest comment: "${commentText}"
 
 ## Steps to Complete
 
 1. Read the Trello card using the trello MCP \`get_card\` tool for full context
-2. Understand what change or fix the reviewer is asking for
-3. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions
-4. Run \`mise install\` if a runtime config file exists, then install project dependencies
-5. Implement the requested changes
-6. Run the test suite and ensure all tests pass
-7. If the feedback relates to UI or visual appearance:
+2. Read all comments on the card using the trello MCP \`get_card_comments\` tool to understand
+   the full feedback history and any prior iterations — the latest comment is shown above but
+   earlier rounds may provide important context
+3. Understand what change or fix the reviewer is asking for
+4. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions
+5. Run \`mise install\` if a runtime config file exists, then install project dependencies
+6. Implement the requested changes
+7. Run the test suite and ensure all tests pass
+8. If the feedback relates to UI or visual appearance:
    a. Check /workspace/.card-images/ for any reference screenshots on the card
    b. Start the dev server and use the Playwright MCP server to take screenshots
    c. Verify the updated UI looks correct before committing
-8. Commit and push your changes to the existing PR branch(es)
-9. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
+9. Commit and push your changes to the existing PR branch(es)
+10. Post a reply on the Trello card using the trello MCP \`add_comment\` tool summarizing
    what you changed in response to the feedback
 
 ## Important Rules

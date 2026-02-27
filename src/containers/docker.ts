@@ -7,6 +7,45 @@ const CONTAINER_PREFIX = 'claude-swe-';
 const LABEL_KEY = 'claude-swe';
 const CARD_LABEL = 'claude-swe.card';
 
+/**
+ * Creates a minimal POSIX tar archive containing a single file.
+ * Used to inject the feedback prompt into a stopped container via putArchive.
+ */
+function createSingleFileTar(filePath: string, content: string): Buffer {
+  const BLOCK = 512;
+  const data = Buffer.from(content, 'utf8');
+  const header = Buffer.alloc(BLOCK, 0);
+
+  // Name (100 bytes, null-terminated)
+  header.write(filePath.slice(0, 99), 0, 'ascii');
+  // Mode: 0644
+  header.write('0000644\0', 100, 'ascii');
+  // UID / GID
+  header.write('0000000\0', 108, 'ascii');
+  header.write('0000000\0', 116, 'ascii');
+  // File size in octal (11 digits + null)
+  header.write(data.length.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
+  // Mtime in octal
+  header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0', 136, 'ascii');
+  // Type flag: '0' = regular file
+  header[156] = 0x30;
+  // Magic + version
+  header.write('ustar\0', 257, 'ascii');
+  header.write('00', 263, 'ascii');
+
+  // Checksum: treat checksum field as 8 spaces, sum all bytes
+  header.fill(0x20, 148, 156);
+  let checksum = 0;
+  for (let i = 0; i < BLOCK; i++) checksum += header[i];
+  header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii');
+
+  // Data padded to BLOCK boundary + two zero end-of-archive blocks
+  const paddedData = Buffer.alloc(Math.ceil(data.length / BLOCK) * BLOCK, 0);
+  data.copy(paddedData);
+
+  return Buffer.concat([header, paddedData, Buffer.alloc(BLOCK * 2, 0)]);
+}
+
 export class DockerBackend implements ContainerBackend {
   private docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
@@ -19,10 +58,50 @@ export class DockerBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, doneListId, isFollowUp } = opts;
     const name = this.containerName(cardShortLink);
     const vol = this.volumeName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'docker', container: name });
+
+    // --- Feedback fast-path: reuse the existing stopped container ---
+    if (isFollowUp) {
+      try {
+        const container = this.docker.getContainer(name);
+        const info = await container.inspect();
+
+        // If still running (previous task hasn't finished), wait for it first
+        if (info.State.Running) {
+          log.info('Feedback: previous container still running — waiting for it to stop');
+          await container.wait();
+        }
+
+        log.info('Feedback: writing prompt file into stopped container via putArchive');
+        const tar = createSingleFileTar('workspace/.feedback-prompt', prompt ?? '');
+        await container.putArchive(tar, { path: '/' });
+
+        log.info('Feedback: starting stopped container');
+        await container.start();
+
+        const startTime = Date.now();
+        const { StatusCode } = await container.wait();
+        const durationMs = Date.now() - startTime;
+        log.info(
+          { exitCode: StatusCode, durationMs, durationMin: Math.round(durationMs / 60_000) },
+          'Feedback container finished — preserved for next round',
+        );
+
+        const logStream = await container.logs({ stdout: true, stderr: true, follow: false });
+        const logs = logStream.toString('utf8');
+        log.info({ logBytes: logs.length }, 'Collected feedback container logs');
+
+        return { exitCode: StatusCode, logs };
+      } catch (err) {
+        log.warn({ err }, 'Feedback: could not reuse existing container — falling back to fresh container');
+        // Fall through to the new-container path below
+      }
+    }
+
+    // --- New container path (new task, or fallback if container is gone) ---
 
     // Ensure the volume exists
     try {
@@ -109,9 +188,8 @@ export class DockerBackend implements ContainerBackend {
     const logs = logStream.toString('utf8');
     log.info({ logBytes: logs.length }, 'Collected container logs');
 
-    // Remove container but leave volume for potential follow-ups
-    await container.remove({ force: true });
-    log.info('Removed finished container (volume preserved for follow-ups)');
+    // Container stays stopped — preserved for feedback loop, destroyed on PR close
+    log.info('Task complete — container preserved for feedback loop (destroyed on PR close)');
 
     return { exitCode: StatusCode, logs };
   }
