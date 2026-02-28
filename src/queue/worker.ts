@@ -117,7 +117,7 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
   const repos = getBoardRepos(boardId);
   log.info({ branchName, repos }, 'Resolved branch and repos for feedback');
 
-  const prompt = buildFeedbackPrompt({ cardId, cardUrl, commentText, commenterName, repos });
+  const prompt = buildFeedbackPrompt({ cardId, cardUrl, commentText, commenterName, repos, doneListId: job.data.doneListId });
   log.info({ promptLength: prompt.length }, 'Built feedback prompt');
 
   if (job.data.doingListId) {

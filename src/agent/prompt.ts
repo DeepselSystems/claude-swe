@@ -258,10 +258,11 @@ interface FeedbackPromptOptions {
   commentText: string;
   commenterName: string;
   repos: string[];
+  doneListId?: string;
 }
 
 export function buildFeedbackPrompt(opts: FeedbackPromptOptions): string {
-  const { cardId, cardUrl, commentText, commenterName } = opts;
+  const { cardId, cardUrl, commentText, commenterName, doneListId } = opts;
 
   return `
 You are an autonomous software engineer handling review feedback on a pull request.
@@ -291,6 +292,7 @@ Latest comment: "${commentText}"
 9. Commit and push your changes to the existing PR branch(es)
 10. Post a reply on the Trello card using the trello MCP \`add_comment\` tool (card ID: ${cardId})
     summarizing what you changed in response to the feedback
+${doneListId ? `11. Move the Trello card back to Done using the trello MCP \`move_card\` tool (card ID: ${cardId}, list ID: ${doneListId})` : ''}
 
 ## Important Rules
 
