@@ -54,6 +54,7 @@ WORKDIR /workspace
 
 # The orchestrator sends the prompt via env var CLAUDE_PROMPT.
 # The entrypoint: set up MCP config, then run claude.
+COPY worker-logger.js /opt/mcp/worker-logger.js
 COPY worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
 RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 

@@ -47,12 +47,14 @@ MCPEOF
   chown -R worker:worker /workspace
 
   cd /workspace
-  exec gosu worker stdbuf -oL claude \
-    --print \
+  gosu worker claude \
+    --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    "$PROMPT"
+    "$PROMPT" \
+    | node /opt/mcp/worker-logger.js
+  exit ${PIPESTATUS[0]}
 fi
 
 # Write .claude/settings.local.json with MCP server configs
@@ -94,19 +96,21 @@ echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true
 # Ensure worker user owns the workspace (PVC may be root-owned on first mount)
 chown -R worker:worker /workspace
 
-# Run Claude Code as non-root — --dangerously-skip-permissions requires a non-root user
-# stdbuf -oL forces line-buffered stdout so logs are visible in real-time via kubectl logs
 cd /workspace
 
 if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
   # Two-phase: Opus plans, Sonnet executes (new tasks)
   echo "=== Phase 1: Planning with ${CLAUDE_PLAN_MODEL:-opus} ==="
-  gosu worker stdbuf -oL claude \
-    --print \
+  gosu worker claude \
+    --output-format stream-json \
     --verbose \
     --model "${CLAUDE_PLAN_MODEL:-opus}" \
     --dangerously-skip-permissions \
-    "${CLAUDE_PLAN_PROMPT}"
+    "${CLAUDE_PLAN_PROMPT}" \
+    | node /opt/mcp/worker-logger.js
+  # Capture claude's exit code (left side of pipe), not the logger's
+  PLAN_EXIT=${PIPESTATUS[0]}
+  if [ "$PLAN_EXIT" -ne 0 ]; then exit "$PLAN_EXIT"; fi
 
   if [ ! -f /workspace/.plan.md ]; then
     echo "ERROR: Planning phase did not produce /workspace/.plan.md — aborting" >&2
@@ -114,18 +118,22 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
   fi
 
   echo "=== Phase 2: Executing with ${CLAUDE_EXECUTE_MODEL:-sonnet} ==="
-  exec gosu worker stdbuf -oL claude \
-    --print \
+  gosu worker claude \
+    --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    "${CLAUDE_EXECUTE_PROMPT}"
+    "${CLAUDE_EXECUTE_PROMPT}" \
+    | node /opt/mcp/worker-logger.js
+  exit ${PIPESTATUS[0]}
 else
   # Single-phase: execute model only (feedback jobs or planMode=false)
-  exec gosu worker stdbuf -oL claude \
-    --print \
+  gosu worker claude \
+    --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    "${CLAUDE_PROMPT}"
+    "${CLAUDE_PROMPT}" \
+    | node /opt/mcp/worker-logger.js
+  exit ${PIPESTATUS[0]}
 fi
