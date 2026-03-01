@@ -5,6 +5,7 @@ interface NewTaskPromptOptions {
   cardUrl: string;
   repos: string[];
   imageDir?: string;
+  doneListId?: string;
 }
 
 function buildRepoSection(repos: string[]): string {
@@ -112,7 +113,7 @@ ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}
 }
 
 export function buildExecutePrompt(opts: NewTaskPromptOptions, additionalPrompt?: string): string {
-  const { cardId, cardShortLink, cardUrl, imageDir } = opts;
+  const { cardId, cardShortLink, cardUrl, imageDir, doneListId } = opts;
 
   const imageSection = imageDir
     ? `
@@ -152,7 +153,7 @@ ${imageSection}
 5. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
 6. For each repo with changes, push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
-7. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
+7. Move the Trello card to the Done list using the trello MCP \`move_card\` tool (card ID: ${cardId}${doneListId ? `, list ID: ${doneListId}` : ''})
 8. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
 
 ## Important Rules
@@ -165,7 +166,7 @@ ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}
 }
 
 export function buildNewTaskPrompt(opts: NewTaskPromptOptions, additionalPrompt?: string): string {
-  const { cardId, cardShortLink, cardName, cardUrl, repos, imageDir } = opts;
+  const { cardId, cardShortLink, cardName, cardUrl, repos, imageDir, doneListId } = opts;
 
   const imageSection = imageDir
     ? `
@@ -230,7 +231,7 @@ ${buildRepoSection(repos)}
 10. For each repo with changes, push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
    If this involved UI changes, paste a final Playwright screenshot into the PR body as evidence
-11. Move the Trello card to the Done list using the trello MCP \`move_card\` tool
+11. Move the Trello card to the Done list using the trello MCP \`move_card\` tool (card ID: ${cardId}${doneListId ? `, list ID: ${doneListId}` : ''})
 12. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
    If this involved UI changes, include the final Playwright screenshot inline in the comment body
 

@@ -38,12 +38,8 @@ RUN npm install -g @anthropic-ai/claude-code
 # Playwright + headless Chromium
 RUN npx playwright install --with-deps chromium
 
-# Trello MCP server — baked into the image so every worker has it
-WORKDIR /opt/mcp/trello-server
-COPY mcp/trello-server/package.json mcp/trello-server/package-lock.json* ./
-RUN npm ci
-COPY mcp/trello-server/ ./
-RUN npm run build
+# Trello MCP — pre-installed so npx uses local copy without downloading at runtime
+RUN npm install -g @delorenj/mcp-server-trello
 
 # Create a non-root user — claude --dangerously-skip-permissions refuses to run as root.
 # The entrypoint runs as root for setup, then uses gosu to drop to this user for claude.
@@ -54,6 +50,7 @@ WORKDIR /workspace
 
 # The orchestrator sends the prompt via env var CLAUDE_PROMPT.
 # The entrypoint: set up MCP config, then run claude.
+COPY scripts/download-images.mjs /opt/mcp/download-images.mjs
 COPY worker-logger.js /opt/mcp/worker-logger.js
 COPY worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
 RUN chmod +x /usr/local/bin/worker-entrypoint.sh

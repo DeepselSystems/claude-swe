@@ -29,12 +29,11 @@ if [ -f /workspace/.feedback-prompt ]; then
 {
   "mcpServers": {
     "trello": {
-      "command": "node",
-      "args": ["/opt/mcp/trello-server/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@delorenj/mcp-server-trello"],
       "env": {
         "TRELLO_API_KEY": "${TRELLO_API_KEY}",
-        "TRELLO_TOKEN": "${TRELLO_TOKEN}",
-        "TRELLO_DONE_LIST_ID": "${TRELLO_DONE_LIST_ID:-}"
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
       }
     },
     "playwright": {
@@ -63,12 +62,11 @@ cat > /workspace/.claude/settings.local.json <<MCPEOF
 {
   "mcpServers": {
     "trello": {
-      "command": "node",
-      "args": ["/opt/mcp/trello-server/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@delorenj/mcp-server-trello"],
       "env": {
         "TRELLO_API_KEY": "${TRELLO_API_KEY}",
-        "TRELLO_TOKEN": "${TRELLO_TOKEN}",
-        "TRELLO_DONE_LIST_ID": "${TRELLO_DONE_LIST_ID:-}"
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
       }
     },
     "playwright": {
@@ -82,7 +80,7 @@ MCPEOF
 # Download card images for visual reference
 IMAGE_DIR="/workspace/.card-images"
 mkdir -p "$IMAGE_DIR"
-node /opt/mcp/trello-server/dist/download-images.js "${CARD_ID}" "$IMAGE_DIR" \
+node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" \
   || echo "Warning: image download failed or no images found — continuing"
 
 # Configure git

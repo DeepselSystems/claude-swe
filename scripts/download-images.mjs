@@ -1,6 +1,6 @@
 /**
  * CLI script: download image attachments (and inline description images) from a Trello card.
- * Usage: node dist/download-images.js <cardId> <destDir>
+ * Usage: node download-images.mjs <cardId> <destDir>
  *
  * Reads TRELLO_API_KEY and TRELLO_TOKEN from environment.
  * Saves files to <destDir>; creates the directory if it doesn't exist.
@@ -28,19 +28,19 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 const MAX_IMAGES = 20;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-function authParams(): string {
+function authParams() {
   return `key=${API_KEY ?? ''}&token=${TOKEN ?? ''}`;
 }
 
-async function trelloFetch<T>(path: string): Promise<T> {
+async function trelloFetch(path) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${BASE}${path}${sep}${authParams()}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Trello ${res.status}: ${await res.text()}`);
-  return res.json() as Promise<T>;
+  return res.json();
 }
 
-function extFromMime(mimeType: string): string {
+function extFromMime(mimeType) {
   switch (mimeType) {
     case 'image/png':  return '.png';
     case 'image/gif':  return '.gif';
@@ -49,14 +49,13 @@ function extFromMime(mimeType: string): string {
   }
 }
 
-function sanitizeFilename(name: string): string {
+function sanitizeFilename(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
 }
 
 /** Download a URL to destPath. Returns false if skipped (too large, error, etc.). */
-async function downloadFile(url: string, destPath: string): Promise<boolean> {
+async function downloadFile(url, destPath) {
   try {
-    // Append auth params for Trello-hosted files
     const fetchUrl = url.includes('trello.com') ? `${url}?${authParams()}` : url;
     const res = await fetch(fetchUrl);
     if (!res.ok) return false;
@@ -82,31 +81,29 @@ async function downloadFile(url: string, destPath: string): Promise<boolean> {
 }
 
 /** Parse inline image URLs from a Trello card description. */
-function extractDescriptionImageUrls(desc: string): string[] {
-  const urls: string[] = [];
+function extractDescriptionImageUrls(desc) {
+  const urls = [];
 
-  // Markdown images: ![alt](url)
   for (const m of desc.matchAll(/!\[.*?\]\((https?:\/\/[^)]+)\)/g)) {
     urls.push(m[1]);
   }
 
-  // Bare Trello attachment URLs that look like images
   for (const m of desc.matchAll(/https?:\/\/trello\.com\/\S+/g)) {
-    const url = m[0].replace(/[)>.,]+$/, ''); // strip trailing punctuation
+    const url = m[0].replace(/[)>.,]+$/, '');
     const ext = path.extname(new URL(url).pathname).toLowerCase();
     if (IMAGE_EXTENSIONS.has(ext)) {
       urls.push(url);
     }
   }
 
-  return [...new Set(urls)]; // deduplicate
+  return [...new Set(urls)];
 }
 
-async function main(): Promise<void> {
+async function main() {
   const [cardId, destDir] = process.argv.slice(2);
 
   if (!cardId || !destDir) {
-    console.error('Usage: download-images.js <cardId> <destDir>');
+    console.error('Usage: download-images.mjs <cardId> <destDir>');
     process.exit(1);
   }
 
@@ -117,17 +114,13 @@ async function main(): Promise<void> {
 
   fs.mkdirSync(destDir, { recursive: true });
 
-  // Fetch card (for description) and attachments in parallel
   const [card, attachments] = await Promise.all([
-    trelloFetch<{ desc: string }>(`/cards/${cardId}?fields=desc`),
-    trelloFetch<Array<{ id: string; name: string; url: string; mimeType: string }>>(
-      `/cards/${cardId}/attachments`,
-    ),
+    trelloFetch(`/cards/${cardId}?fields=desc`),
+    trelloFetch(`/cards/${cardId}/attachments`),
   ]);
 
   let downloaded = 0;
 
-  // Download image attachments
   for (const att of attachments) {
     if (downloaded >= MAX_IMAGES) break;
 
@@ -147,7 +140,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Download inline images from description
   const descImageUrls = extractDescriptionImageUrls(card.desc ?? '');
   let descIndex = 1;
 

@@ -51,7 +51,7 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
   const repos = getBoardRepos(boardId);
   log.info({ branchName, repos }, 'Resolved branch and repos for task');
 
-  const promptOpts = { cardId, cardShortLink, cardName, cardUrl, repos, imageDir: '/workspace/.card-images' };
+  const promptOpts = { cardId, cardShortLink, cardName, cardUrl, repos, imageDir: '/workspace/.card-images', doneListId: job.data.doneListId };
   const { planMode, models, prompts } = config.agent;
   const planModel = models.plan;
   const executeModel = models.execute;
