@@ -5,6 +5,7 @@ vi.mock('../src/config.js', () => ({
   config: {
     trello: {
       apiKey: 'test-key',
+      apiSecret: 'test-secret',
       token: 'test-token',
       botUsername: 'claude',
       boards: [
@@ -42,6 +43,23 @@ vi.mock('../src/logger.js', () => ({
     error: vi.fn(),
     child: vi.fn().mockReturnThis(),
   },
+}));
+
+vi.mock('../src/trello/bot.js', () => ({
+  botMemberId: 'bot-member-id',
+}));
+
+vi.mock('../src/trello/api.js', () => ({
+  fetchCard: vi.fn().mockImplementation((cardId: string) =>
+    Promise.resolve({
+      id: cardId,
+      shortLink: 'abc123',
+      name: 'Fix login bug',
+      desc: 'repo: https://github.com/org/app',
+      url: 'https://trello.com/c/abc123',
+      idList: 'list-1',
+    }),
+  ),
 }));
 
 import { taskQueue } from '../src/queue/queue.js';
@@ -117,7 +135,7 @@ describe('handleTrelloWebhook', () => {
         memberCreator: { id: 'u1', username: 'tim', fullName: 'Tim' },
         data: {
           card: { id: 'card-1', shortLink: 'abc123', name: 'Fix login bug', desc: 'repo: https://github.com/org/app', url: 'https://trello.com/c/abc123' },
-          member: { id: 'u2', username: 'claude', fullName: 'Claude' },
+          member: { id: 'bot-member-id', username: 'claude', fullName: 'Claude' },
           board: { id: 'board-1', name: 'My Board' },
         },
         id: 'act-1',
@@ -127,7 +145,7 @@ describe('handleTrelloWebhook', () => {
     };
 
     const bodyStr = JSON.stringify(payload);
-    const sig = makeTrelloSignature(bodyStr, 'test-token', 'https://example.com');
+    const sig = makeTrelloSignature(bodyStr, 'test-secret', 'https://example.com');
     const req = {
       method: 'POST',
       headers: { 'x-trello-webhook': sig },
@@ -166,7 +184,7 @@ describe('handleTrelloWebhook', () => {
     };
 
     const bodyStr = JSON.stringify(payload);
-    const sig = makeTrelloSignature(bodyStr, 'test-token', 'https://example.com');
+    const sig = makeTrelloSignature(bodyStr, 'test-secret', 'https://example.com');
     const req = {
       method: 'POST',
       headers: { 'x-trello-webhook': sig },

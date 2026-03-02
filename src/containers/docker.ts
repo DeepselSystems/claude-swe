@@ -160,11 +160,20 @@ export class DockerBackend implements ContainerBackend {
         `TRELLO_DONE_LIST_ID=${doneListId ?? ''}`,
         `CLAUDE_PLAN_MODEL=${planModel ?? 'opus'}`,
         `CLAUDE_EXECUTE_MODEL=${executeModel ?? 'sonnet'}`,
+        `CARD_SHORT_LINK=${cardShortLink}`,
         'CI=1',
         'TERM=dumb',
+        ...(config.containers.docker.enableSocketMount
+          ? ['DOCKER_HOST=unix:///var/run/docker.sock']
+          : []),
       ],
       HostConfig: {
-        Binds: [`${vol}:/workspace`],
+        Binds: [
+          `${vol}:/workspace`,
+          ...(config.containers.docker.enableSocketMount
+            ? ['/var/run/docker.sock:/var/run/docker.sock']
+            : []),
+        ],
         Memory: memoryMb * 1024 * 1024,
         ShmSize: shmMb * 1024 * 1024,
       },

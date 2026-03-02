@@ -162,6 +162,7 @@ ${imageSection}
 - Do NOT move the card to Done until all tests pass
 - Do NOT open a PR if there are failing tests
 - Write clean, idiomatic code that matches the existing codebase style
+- If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
 
@@ -241,11 +242,13 @@ ${buildRepoSection(repos)}
 - Do NOT open a PR if there are failing tests
 - Write clean, idiomatic code that matches the existing codebase style
 - If anything is unclear, make a reasonable implementation choice and document it
+- If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
 
 interface FeedbackPromptOptions {
   cardId: string;
+  cardShortLink: string;
   cardUrl: string;
   commentText: string;
   commenterName: string;
@@ -254,7 +257,7 @@ interface FeedbackPromptOptions {
 }
 
 export function buildFeedbackPrompt(opts: FeedbackPromptOptions, additionalPrompt?: string): string {
-  const { cardId, cardUrl, commentText, commenterName, doneListId } = opts;
+  const { cardId, cardShortLink, cardUrl, commentText, commenterName, doneListId } = opts;
 
   return `
 You are an autonomous software engineer handling review feedback on a pull request.
@@ -296,5 +299,6 @@ ${doneListId ? `12. Move the Trello card back to Done using the trello MCP \`mov
 - Do not open a new PR — push to the existing branch
 - Post your summary comment on the Trello card only — do NOT comment on the GitHub PR
 - Keep the response comment concise and factual
+- If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }

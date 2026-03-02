@@ -32,6 +32,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Docker CLI + Compose plugin — workers use these to run `docker compose up`
+# for test environments. The daemon comes from the host socket (Docker backend)
+# or a DinD sidecar (Kubernetes backend).
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg \
+    | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+       https://download.docker.com/linux/debian bookworm stable" \
+    | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
 # Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 

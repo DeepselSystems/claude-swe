@@ -50,9 +50,13 @@
     "backend": "kubernetes",
     "workerImage": "ghcr.io/deepselsystems/claude-swe-worker:latest",
     "concurrency": 10,
+    "docker": {
+      "enableSocketMount": false
+    },
     "kubernetes": {
       "namespace": "claude-swe",
-      "storageClass": "local-storage"
+      "storageClass": "local-storage",
+      "enableDinD": false
     }
   }
 }

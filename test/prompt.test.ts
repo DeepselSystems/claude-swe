@@ -34,7 +34,7 @@ describe('buildNewTaskPrompt', () => {
     });
     expect(prompt).toContain('https://github.com/myorg/frontend');
     expect(prompt).toContain('https://github.com/myorg/backend');
-    expect(prompt).toContain('determine which repo');
+    expect(prompt).toContain('this task may span multiple');
   });
 
   it('handles no configured repos', () => {
@@ -59,7 +59,7 @@ describe('buildNewTaskPrompt', () => {
     expect(prompt).toContain('/workspace/.card-images');
     expect(prompt).toContain('Playwright');
     expect(prompt).toContain('Visual References');
-    expect(prompt).toContain('Visual Verification');
+    expect(prompt).toContain('browser verification');
   });
 
   it('omits visual sections when no imageDir is provided', () => {
@@ -90,6 +90,7 @@ describe('buildFeedbackPrompt', () => {
   it('includes comment text and commenter name', () => {
     const prompt = buildFeedbackPrompt({
       cardId: 'card-456',
+      cardShortLink: 'xyz',
       cardUrl: 'https://trello.com/c/xyz',
       commentText: 'Please use a spinner instead of skeleton',
       commenterName: 'Alice',
@@ -103,6 +104,7 @@ describe('buildFeedbackPrompt', () => {
   it('tells Claude not to open a new PR', () => {
     const prompt = buildFeedbackPrompt({
       cardId: 'card-456',
+      cardShortLink: 'xyz',
       cardUrl: 'https://trello.com/c/xyz',
       commentText: 'Fix the padding',
       commenterName: 'Bob',

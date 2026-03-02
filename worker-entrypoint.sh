@@ -5,6 +5,43 @@ set -euo pipefail
 eval "$(/root/.local/bin/mise activate bash)" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# Docker readiness: if DOCKER_HOST points to a Unix socket (DinD sidecar),
+# wait for the daemon to become available before proceeding.
+# ---------------------------------------------------------------------------
+if [ -n "${DOCKER_HOST:-}" ] && [[ "${DOCKER_HOST}" == unix://* ]]; then
+  echo "Waiting for Docker daemon at ${DOCKER_HOST}..."
+  for i in $(seq 1 30); do
+    if docker info >/dev/null 2>&1; then
+      echo "Docker daemon ready (attempt ${i})"
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      echo "WARNING: Docker daemon not ready after 30s — docker commands may fail" >&2
+    fi
+    sleep 1
+  done
+fi
+
+# ---------------------------------------------------------------------------
+# Docker cleanup trap: on exit, remove any containers/networks/volumes spawned
+# by docker compose during this worker session, scoped by project name.
+# ---------------------------------------------------------------------------
+_docker_cleanup() {
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    if [ -n "${CARD_SHORT_LINK:-}" ]; then
+      echo "=== Docker cleanup: removing test containers for claude-${CARD_SHORT_LINK} ==="
+      docker ps -aq --filter "label=com.docker.compose.project=claude-${CARD_SHORT_LINK}" \
+        | xargs -r docker rm -f 2>/dev/null || true
+      docker network ls -q --filter "label=com.docker.compose.project=claude-${CARD_SHORT_LINK}" \
+        | xargs -r docker network rm 2>/dev/null || true
+      docker volume ls -q --filter "label=com.docker.compose.project=claude-${CARD_SHORT_LINK}" \
+        | xargs -r docker volume rm 2>/dev/null || true
+    fi
+  fi
+}
+trap _docker_cleanup EXIT
+
+# ---------------------------------------------------------------------------
 # Feedback fast-path: if the orchestrator wrote a prompt file to the workspace
 # (Docker: via putArchive into stopped container; K8s: via init container),
 # skip all setup and run claude directly with that prompt.

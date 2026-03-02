@@ -77,9 +77,13 @@ const configSchema = z.object({
     backend: z.enum(['docker', 'kubernetes']).default('docker'),
     workerImage: z.string().default('claude-swe-worker:latest'),
     concurrency: z.number().int().positive().default(10),
+    docker: z.object({
+      enableSocketMount: z.boolean().default(false),
+    }).default({}),
     kubernetes: z.object({
       namespace: z.string().default('default'),
       storageClass: z.string().default(''),
+      enableDinD: z.boolean().default(false),
     }).default({}),
   }).default({}),
 });

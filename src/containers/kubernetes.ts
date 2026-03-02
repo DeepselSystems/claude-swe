@@ -70,6 +70,7 @@ export class KubernetesBackend implements ContainerBackend {
     }
 
     const isTwoPhase = !!(planPrompt && executePrompt);
+    const enableDinD = config.containers.kubernetes.enableDinD;
 
     // For feedback runs: inject the prompt via an init container that writes
     // .feedback-prompt to the PVC. The worker entrypoint detects this file and
@@ -111,6 +112,24 @@ export class KubernetesBackend implements ContainerBackend {
             restartPolicy: 'Never',
             ...(initContainers.length > 0 ? { initContainers } : {}),
             containers: [
+              // DinD sidecar: runs a Docker daemon that the worker talks to via shared socket
+              ...(enableDinD ? [{
+                name: 'dind',
+                image: 'docker:27-dind',
+                securityContext: { privileged: true },
+                args: ['--host=unix:///var/run/dind/docker.sock'],
+                env: [
+                  { name: 'DOCKER_TLS_CERTDIR', value: '' }, // TLS off — socket is pod-internal
+                ],
+                volumeMounts: [
+                  { name: 'docker-sock', mountPath: '/var/run/dind' },
+                  { name: 'docker-lib', mountPath: '/var/lib/docker' },
+                ],
+                resources: {
+                  requests: { memory: '256Mi', cpu: '200m' },
+                  limits:   { memory: '2Gi' },
+                },
+              } as k8s.V1Container] : []),
               {
                 name: 'worker',
                 image: config.containers.workerImage,
@@ -132,8 +151,12 @@ export class KubernetesBackend implements ContainerBackend {
                   { name: 'TRELLO_DONE_LIST_ID',   value: doneListId ?? '' },
                   { name: 'CLAUDE_PLAN_MODEL',     value: planModel ?? 'opus' },
                   { name: 'CLAUDE_EXECUTE_MODEL',  value: executeModel ?? 'sonnet' },
+                  { name: 'CARD_SHORT_LINK',       value: cardShortLink },
                   { name: 'CI',                    value: '1' },
                   { name: 'TERM',                  value: 'dumb' },
+                  ...(enableDinD
+                    ? [{ name: 'DOCKER_HOST', value: 'unix:///var/run/dind/docker.sock' }]
+                    : []),
                 ],
                 resources: {
                   requests: { memory: '512Mi', cpu: '500m' },
@@ -142,6 +165,9 @@ export class KubernetesBackend implements ContainerBackend {
                 volumeMounts: [
                   { name: 'workspace', mountPath: '/workspace' },
                   { name: 'dshm',      mountPath: '/dev/shm' },
+                  ...(enableDinD
+                    ? [{ name: 'docker-sock', mountPath: '/var/run/dind' }]
+                    : []),
                 ],
               },
             ],
@@ -155,6 +181,10 @@ export class KubernetesBackend implements ContainerBackend {
                 name: 'dshm',
                 emptyDir: { medium: 'Memory', sizeLimit: '256Mi' },
               },
+              ...(enableDinD ? [
+                { name: 'docker-sock', emptyDir: {} },
+                { name: 'docker-lib', emptyDir: {} },
+              ] : []),
             ],
           },
         },
