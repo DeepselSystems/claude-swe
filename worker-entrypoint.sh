@@ -42,6 +42,32 @@ _docker_cleanup() {
 trap _docker_cleanup EXIT
 
 # ---------------------------------------------------------------------------
+# Write MCP config to a known path and pass it via --mcp-config.
+# This is more reliable than settings file discovery (which depends on
+# $HOME and project-root detection that varies by Claude Code version).
+# ---------------------------------------------------------------------------
+MCP_CONFIG="/tmp/mcp-config.json"
+cat > "$MCP_CONFIG" <<MCPEOF
+{
+  "mcpServers": {
+    "trello": {
+      "command": "npx",
+      "args": ["-y", "@delorenj/mcp-server-trello"],
+      "env": {
+        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headless"]
+    }
+  }
+}
+MCPEOF
+echo "MCP config written to ${MCP_CONFIG}"
+
+# ---------------------------------------------------------------------------
 # Feedback fast-path: if the orchestrator wrote a prompt file to the workspace
 # (Docker: via putArchive into stopped container; K8s: via init container),
 # skip all setup and run claude directly with that prompt.
@@ -60,29 +86,6 @@ if [ -f /workspace/.feedback-prompt ]; then
     fi
   done
 
-  # Always write fresh MCP settings (don't rely on PVC state from a prior run)
-  # Write to both user home and workspace project dir — Claude Code may use either
-  # depending on whether it resolves project root from CWD or $HOME.
-  mkdir -p /root/.claude /workspace/.claude
-  cat > /root/.claude/settings.local.json <<MCPEOF
-{
-  "mcpServers": {
-    "trello": {
-      "command": "npx",
-      "args": ["-y", "@delorenj/mcp-server-trello"],
-      "env": {
-        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
-        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
-      }
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp@latest", "--headless"]
-    }
-  }
-}
-MCPEOF
-  cp /root/.claude/settings.local.json /workspace/.claude/settings.local.json
   chown -R worker:worker /workspace
 
   cd /workspace
@@ -91,33 +94,11 @@ MCPEOF
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
+    --mcp-config "$MCP_CONFIG" \
     "$PROMPT" \
     | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}
 fi
-
-# Write .claude/settings.local.json with MCP server configs
-# Write to both user home and workspace project dir — Claude Code may use either
-mkdir -p /root/.claude /workspace/.claude
-cat > /root/.claude/settings.local.json <<MCPEOF
-{
-  "mcpServers": {
-    "trello": {
-      "command": "npx",
-      "args": ["-y", "@delorenj/mcp-server-trello"],
-      "env": {
-        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
-        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
-      }
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp@latest", "--headless"]
-    }
-  }
-}
-MCPEOF
-cp /root/.claude/settings.local.json /workspace/.claude/settings.local.json
 
 # Download card images for visual reference
 IMAGE_DIR="/workspace/.card-images"
@@ -146,6 +127,7 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
     --verbose \
     --model "${CLAUDE_PLAN_MODEL:-opus}" \
     --dangerously-skip-permissions \
+    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_PLAN_PROMPT}" \
     | node /opt/mcp/worker-logger.js
   # Capture claude's exit code (left side of pipe), not the logger's
@@ -163,6 +145,7 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
+    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_EXECUTE_PROMPT}" \
     | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}
@@ -173,6 +156,7 @@ else
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
+    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_PROMPT}" \
     | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}

@@ -222,7 +222,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       return;
     }
 
-    if (memberCreator.username === config.trello.botUsername) {
+    if (botMemberId && memberCreator.id === botMemberId) {
       logger.info({ phase: 'webhook', cardId: card.id }, 'Ignoring comment from bot itself');
       return;
     }

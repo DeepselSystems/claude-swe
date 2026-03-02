@@ -46,6 +46,7 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
   const log = logger.child({ phase: 'queue', jobId: job.id, cardId, cardShortLink, cardName });
 
   log.info({ attempt: job.attemptsMade + 1, maxAttempts: job.opts?.attempts ?? 1 }, 'Picked up new-task job');
+  cancelledCards.delete(cardShortLink); // Clear stale cancelled state in case bot was re-assigned
 
   const branchName = `claude/${cardShortLink}`;
   const repos = getBoardRepos(boardId);
