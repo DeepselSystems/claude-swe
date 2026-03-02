@@ -56,11 +56,13 @@ function sanitizeFilename(name) {
 /** Download a URL to destPath. Returns false if skipped (too large, error, etc.). */
 async function downloadFile(url, destPath) {
   try {
-    const sep = url.includes('?') ? '&' : '?';
-    const fetchUrl = url.includes('trello.com') ? `${url}${sep}${authParams()}` : url;
-    const res = await fetch(fetchUrl);
+    // Trello download URLs require OAuth Authorization header; query-param auth returns 401.
+    const headers = url.includes('trello.com')
+      ? { Authorization: `OAuth oauth_consumer_key="${API_KEY}", oauth_token="${TOKEN}"` }
+      : {};
+    const res = await fetch(url, { headers });
     if (!res.ok) {
-      console.error(`Download failed for ${path.basename(destPath)}: HTTP ${res.status} (auth appended: ${url.includes('trello.com')}) ${url}`);
+      console.error(`Download failed for ${path.basename(destPath)}: HTTP ${res.status} ${url}`);
       return false;
     }
 

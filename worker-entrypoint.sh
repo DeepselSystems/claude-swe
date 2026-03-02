@@ -61,7 +61,9 @@ if [ -f /workspace/.feedback-prompt ]; then
   done
 
   # Always write fresh MCP settings (don't rely on PVC state from a prior run)
-  mkdir -p /root/.claude
+  # Write to both user home and workspace project dir — Claude Code may use either
+  # depending on whether it resolves project root from CWD or $HOME.
+  mkdir -p /root/.claude /workspace/.claude
   cat > /root/.claude/settings.local.json <<MCPEOF
 {
   "mcpServers": {
@@ -80,6 +82,7 @@ if [ -f /workspace/.feedback-prompt ]; then
   }
 }
 MCPEOF
+  cp /root/.claude/settings.local.json /workspace/.claude/settings.local.json
   chown -R worker:worker /workspace
 
   cd /workspace
@@ -94,7 +97,8 @@ MCPEOF
 fi
 
 # Write .claude/settings.local.json with MCP server configs
-mkdir -p /root/.claude
+# Write to both user home and workspace project dir — Claude Code may use either
+mkdir -p /root/.claude /workspace/.claude
 cat > /root/.claude/settings.local.json <<MCPEOF
 {
   "mcpServers": {
@@ -113,6 +117,7 @@ cat > /root/.claude/settings.local.json <<MCPEOF
   }
 }
 MCPEOF
+cp /root/.claude/settings.local.json /workspace/.claude/settings.local.json
 
 # Download card images for visual reference
 IMAGE_DIR="/workspace/.card-images"
