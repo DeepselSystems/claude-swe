@@ -56,9 +56,13 @@ function sanitizeFilename(name) {
 /** Download a URL to destPath. Returns false if skipped (too large, error, etc.). */
 async function downloadFile(url, destPath) {
   try {
-    const fetchUrl = url.includes('trello.com') ? `${url}?${authParams()}` : url;
+    const sep = url.includes('?') ? '&' : '?';
+    const fetchUrl = url.includes('trello.com') ? `${url}${sep}${authParams()}` : url;
     const res = await fetch(fetchUrl);
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.error(`Download failed for ${path.basename(destPath)}: HTTP ${res.status} ${url}`);
+      return false;
+    }
 
     const contentLength = res.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > MAX_FILE_BYTES) {
@@ -121,6 +125,7 @@ async function main() {
 
   let downloaded = 0;
 
+  console.log(`Found ${attachments.length} attachment(s) on card`);
   for (const att of attachments) {
     if (downloaded >= MAX_IMAGES) break;
 
@@ -128,7 +133,10 @@ async function main() {
     const ext = path.extname(att.name).toLowerCase();
     const isImageExt = IMAGE_EXTENSIONS.has(ext);
 
-    if (!isImageMime && !isImageExt) continue;
+    if (!isImageMime && !isImageExt) {
+      console.log(`  Skipping "${att.name}": not an image (mime=${att.mimeType || 'none'}, ext=${ext || 'none'})`);
+      continue;
+    }
 
     const filename = sanitizeFilename(att.name) || `attachment-${downloaded + 1}${extFromMime(att.mimeType)}`;
     const destPath = path.join(destDir, filename);
