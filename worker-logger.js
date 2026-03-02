@@ -84,6 +84,15 @@ rl.on('line', (line) => {
         console.log(`[result]     ${event.subtype ?? 'error'}${event.error ? ': ' + event.error : ''}`);
         exitCode = 1;
       }
+      const usage = event.usage;
+      const cost = event.total_cost_usd;
+      if (usage || cost != null) {
+        const parts = [];
+        if (usage?.input_tokens != null) parts.push(`in: ${usage.input_tokens.toLocaleString()}`);
+        if (usage?.output_tokens != null) parts.push(`out: ${usage.output_tokens.toLocaleString()}`);
+        if (cost != null) parts.push(`cost: $${cost.toFixed(4)}`);
+        if (parts.length) console.log(`[cost]       ${parts.join(' | ')}`);
+      }
       break;
     }
     case 'system':
