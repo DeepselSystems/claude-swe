@@ -1,6 +1,6 @@
 # Claude SWE Agent
 
-Autonomous development agent: tag `@claude` on a Trello card → Claude codes it, tests it, opens a PR, and moves the card to Done. When humans comment on the card, Claude reads the feedback and updates the PR.
+Autonomous development agent: assign the Claude bot user to a Trello card → Claude codes it, tests it, opens a PR, and moves the card to Done. When humans comment on the card, Claude reads the feedback and updates the PR.
 
 Each task runs in its own isolated Docker container with persistent storage. The container has `mise` (universal runtime manager) so Claude auto-detects and installs whatever the project needs — Node, Python, Go, Rust, Ruby, etc. When the PR is merged or closed, the container and volume are automatically cleaned up.
 
@@ -11,18 +11,18 @@ Each task runs in its own isolated Docker container with persistent storage. The
 │ Orchestrator (lightweight Node.js server)       │
 │                                                 │
 │  Trello webhook ─┬─► Task Queue (BullMQ/Redis)  │
-│  GitHub webhook ─┘       │                      │
-│                          ▼                      │
-│               Container Manager (dockerode)     │
-│                 │         │          │           │
-│                 ▼         ▼          ▼           │
-│          ┌─────────┐ ┌─────────┐ ┌─────────┐   │
-│          │Worker #1│ │Worker #2│ │Worker #3│   │
-│          │(card A) │ │(card B) │ │(card C) │   │
-│          └────┬────┘ └────┬────┘ └────┬────┘   │
-│               │           │           │         │
-│          vol-A        vol-B       vol-C         │
-│         (persist)    (persist)   (persist)      │
+│  GitHub webhook ─┘        │                     │
+│                           ▼                     │
+│               Container Manager (docker/k8s)    │
+│                 │           │          │        │
+│                 ▼           ▼          ▼        │
+│            ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│            │Worker #1│ │Worker #2│ │Worker #3│  │
+│            │(card A) │ │(card B) │ │(card C) │  │
+│            └────┬────┘ └────┬────┘ └────┬────┘  │
+│                 │           │           │       │
+│               vol-A       vol-B       vol-C     │
+│             (persist)   (persist)   (persist)   │
 └─────────────────────────────────────────────────┘
 
 Each worker container has:
@@ -32,7 +32,7 @@ Each worker container has:
 
 ### Lifecycle
 
-1. **Trello webhook** fires when you tag `@claude` on a card in a watched list
+1. **Trello webhook** fires when you assign the bot user to a card in a watched list
 2. **Orchestrator** enqueues a `new-task` job
 3. **Worker** clones the repo into a persistent Docker volume, spins up a container
 4. **Claude Code** (inside the container) reads the card via Trello MCP, installs deps via `mise`, codes, tests (including Playwright visual tests), opens a PR, moves card to Done
@@ -199,6 +199,8 @@ In both cases:
 | `GET` | `/workers` | List active worker containers |
 | `HEAD/POST` | `/webhooks/trello` | Trello webhook receiver |
 | `POST` | `/webhooks/github` | GitHub webhook (PR closed → cleanup) |
+| `GET` | `/logs/:token` | Live log viewer (HTML) for a running worker |
+| `GET` | `/logs/:token/stream` | SSE stream of worker container stdout/stderr |
 
 ## Project structure
 
