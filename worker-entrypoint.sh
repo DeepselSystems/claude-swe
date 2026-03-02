@@ -61,8 +61,8 @@ if [ -f /workspace/.feedback-prompt ]; then
   done
 
   # Always write fresh MCP settings (don't rely on PVC state from a prior run)
-  mkdir -p /home/worker/.claude
-  cat > /home/worker/.claude/settings.local.json <<MCPEOF
+  mkdir -p /root/.claude
+  cat > /root/.claude/settings.local.json <<MCPEOF
 {
   "mcpServers": {
     "trello": {
@@ -80,7 +80,7 @@ if [ -f /workspace/.feedback-prompt ]; then
   }
 }
 MCPEOF
-  chown -R worker:worker /workspace /home/worker/.claude
+  chown -R worker:worker /workspace
 
   cd /workspace
   gosu worker claude \
@@ -94,8 +94,8 @@ MCPEOF
 fi
 
 # Write .claude/settings.local.json with MCP server configs
-mkdir -p /home/worker/.claude
-cat > /home/worker/.claude/settings.local.json <<MCPEOF
+mkdir -p /root/.claude
+cat > /root/.claude/settings.local.json <<MCPEOF
 {
   "mcpServers": {
     "trello": {
@@ -129,7 +129,7 @@ git config --global --add safe.directory /workspace
 echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true
 
 # Ensure worker user owns the workspace (PVC may be root-owned on first mount)
-chown -R worker:worker /workspace /home/worker/.claude
+chown -R worker:worker /workspace
 
 cd /workspace
 

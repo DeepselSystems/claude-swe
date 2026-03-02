@@ -60,7 +60,7 @@ async function downloadFile(url, destPath) {
     const fetchUrl = url.includes('trello.com') ? `${url}${sep}${authParams()}` : url;
     const res = await fetch(fetchUrl);
     if (!res.ok) {
-      console.error(`Download failed for ${path.basename(destPath)}: HTTP ${res.status} ${url}`);
+      console.error(`Download failed for ${path.basename(destPath)}: HTTP ${res.status} (auth appended: ${url.includes('trello.com')}) ${url}`);
       return false;
     }
 
@@ -115,6 +115,8 @@ async function main() {
     console.error('TRELLO_API_KEY and TRELLO_TOKEN must be set');
     process.exit(1);
   }
+
+  console.log(`Credentials: key=${API_KEY.slice(0, 4)}... token=${TOKEN.slice(0, 4)}...`);
 
   fs.mkdirSync(destDir, { recursive: true });
 
