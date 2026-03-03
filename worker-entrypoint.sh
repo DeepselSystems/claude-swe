@@ -42,14 +42,13 @@ _docker_cleanup() {
 trap _docker_cleanup EXIT
 
 # ---------------------------------------------------------------------------
-# Write MCP config as a settings file in the worker user's home directory.
-# NOTE: --mcp-config flag is broken in Claude Code 2.1.x (silently produces
-# zero output). Using settings.local.json in $HOME/.claude/ instead.
+# Write MCP config to ~/.claude.json (user-scoped).
+# User-scoped MCP is always loaded regardless of project root detection.
+# Project-scoped .mcp.json won't work here because /workspace has no .git
+# and the agent clones repos into subdirectories that become the project root.
 # ---------------------------------------------------------------------------
 WORKER_HOME="/home/worker"
-CLAUDE_SETTINGS_DIR="${WORKER_HOME}/.claude"
-mkdir -p "$CLAUDE_SETTINGS_DIR"
-cat > "${CLAUDE_SETTINGS_DIR}/settings.local.json" <<MCPEOF
+cat > "${WORKER_HOME}/.claude.json" <<MCPEOF
 {
   "mcpServers": {
     "trello": {
@@ -67,8 +66,8 @@ cat > "${CLAUDE_SETTINGS_DIR}/settings.local.json" <<MCPEOF
   }
 }
 MCPEOF
-chown -R worker:worker "$CLAUDE_SETTINGS_DIR"
-echo "MCP config written to ${CLAUDE_SETTINGS_DIR}/settings.local.json"
+chown worker:worker "${WORKER_HOME}/.claude.json"
+echo "MCP config written to ${WORKER_HOME}/.claude.json"
 
 # ---------------------------------------------------------------------------
 # Feedback fast-path: if the orchestrator wrote a prompt file to the workspace
@@ -80,10 +79,10 @@ if [ -f /workspace/.feedback-prompt ]; then
   rm /workspace/.feedback-prompt
 
   # Pull latest changes in each repo so feedback sees any commits pushed since the last run
-  git config --global --add safe.directory /workspace
   echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true
   for repo_dir in /workspace/*/; do
     if [ -d "${repo_dir}.git" ]; then
+      git config --global --add safe.directory "$repo_dir"
       echo "Pulling latest changes in ${repo_dir}"
       git -C "$repo_dir" pull --rebase --autostash 2>&1 || echo "Warning: git pull failed in ${repo_dir} — continuing"
     fi
@@ -111,7 +110,6 @@ node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" \
 # Configure git
 git config --global user.name "Claude SWE"
 git config --global user.email "claude-swe@noreply.example.com"
-git config --global --add safe.directory /workspace
 
 # Auth gh CLI
 echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true

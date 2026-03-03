@@ -142,20 +142,21 @@ ${imageSection}
 ## Steps to Complete
 
 1. Read /workspace/.plan.md — this is your specification, follow it precisely
-2. Implement every change described in the plan
-3. Run the test suite as specified in the plan — fix any failures before proceeding
-4. If this task involves any UI or frontend changes, do browser verification:
+2. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions for code style, build commands, and conventions
+3. Implement every change described in the plan
+4. Run the test suite as specified in the plan — fix any failures before proceeding
+5. If this task involves any UI or frontend changes, do browser verification:
    a. Start the dev server (e.g. \`npm run dev\`)
    b. Use the Playwright MCP server to navigate to the relevant pages
    c. Take screenshots and verify the result looks correct
    d. If reference images exist in ${imageDir || '/workspace/.card-images'}/, compare against them and iterate until they match
    e. Do NOT commit until the UI looks right — paste a final screenshot into the PR body as evidence
    Skip this step only if the task is purely backend with zero UI impact.
-5. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
-6. For each repo with changes, push the branch and open a PR using the gh CLI:
+6. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
+7. For each repo with changes, push the branch and open a PR using the gh CLI:
    \`gh pr create --title "<task name>" --body "<summary of changes>"\`
-7. Move the Trello card to the Done list using the trello MCP \`move_card\` tool (card ID: ${cardId}${doneListId ? `, list ID: ${doneListId}` : ''})
-8. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
+8. Move the Trello card to the Done list using the trello MCP \`move_card\` tool (card ID: ${cardId}${doneListId ? `, list ID: ${doneListId}` : ''})
+9. Post all PR URLs as a comment on the Trello card using the trello MCP \`add_comment\` tool
 
 ## Important Rules
 
