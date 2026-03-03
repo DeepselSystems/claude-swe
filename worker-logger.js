@@ -81,7 +81,18 @@ rl.on('line', (line) => {
         console.log(`[result]     success`);
         exitCode = 0;
       } else {
-        console.log(`[result]     ${event.subtype ?? 'error'}${event.error ? ': ' + event.error : ''}`);
+        console.log(`[result]     ${event.subtype ?? 'error'}`);
+        if (event.error) {
+          // Print the full error message — don't truncate, this is critical for debugging
+          console.log(`[error]      ${event.error}`);
+        }
+        if (event.result) {
+          // Some result events include a result field with more detail
+          const resultStr = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
+          if (resultStr.length > 0) {
+            console.log(`[error_detail] ${resultStr.slice(0, 2000)}`);
+          }
+        }
         exitCode = 1;
       }
       const usage = event.usage;

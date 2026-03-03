@@ -109,6 +109,7 @@ ${buildRepoSection(repos)}
 - Do NOT open PRs, move the Trello card, or post comments
 - The plan must be specific enough that another agent can implement it without reading the card again
 - If anything in the card is ambiguous, document your interpretation in the plan
+- Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
 
@@ -162,6 +163,7 @@ ${imageSection}
 - Do NOT move the card to Done until all tests pass
 - Do NOT open a PR if there are failing tests
 - Write clean, idiomatic code that matches the existing codebase style
+- Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
@@ -242,6 +244,7 @@ ${buildRepoSection(repos)}
 - Do NOT open a PR if there are failing tests
 - Write clean, idiomatic code that matches the existing codebase style
 - If anything is unclear, make a reasonable implementation choice and document it
+- Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
@@ -275,23 +278,29 @@ Latest comment: "${commentText}"
 2. Read all comments on the card using the trello MCP \`get_card_comments\` tool to understand
    the full feedback history and any prior iterations — the latest comment is shown above but
    earlier rounds may provide important context
-3. Read /workspace/.plan.md if it exists — it contains the original implementation plan and
+3. **Evaluate whether the comment is actually feedback or an instruction for you.**
+   Not every comment on a card is meant as feedback for Claude. If the comment is:
+   - A conversation between humans (e.g. status updates, questions to each other, general discussion)
+   - Not related to code changes or the implementation
+   - Not requesting any action from you
+   Then return "Comment Not For Me" without any explanation and exit without making any changes.
+4. Read /workspace/.plan.md if it exists — it contains the original implementation plan and
    is essential context for understanding the intended approach and design decisions
-4. Understand what change or fix the reviewer is asking for
-5. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions
-6. Run \`mise install\` if a runtime config file exists, then install project dependencies
-7. Implement the requested changes
-8. Run the test suite and ensure all tests pass
-9. If this task involves any UI or frontend changes, do browser verification:
+5. Understand what change or fix the reviewer is asking for
+6. In each repo under /workspace, read \`CLAUDE.md\` in the root if it exists — it contains project-specific instructions
+7. Run \`mise install\` if a runtime config file exists, then install project dependencies
+8. Implement the requested changes
+9. Run the test suite and ensure all tests pass
+10. If this task involves any UI or frontend changes, do browser verification:
    a. Start the dev server and use the Playwright MCP server to navigate to the relevant pages
    b. Take screenshots and verify the updated UI looks correct
    c. Check /workspace/.card-images/ for any reference images and compare against them
    d. Iterate until the UI is correct — do NOT commit until it looks right
    Skip this step only if the changes are purely backend with zero UI impact.
-10. Commit and push your changes to the existing PR branch(es)
-11. Post a reply on the Trello card using the trello MCP \`add_comment\` tool (card ID: ${cardId})
+11. Commit and push your changes to the existing PR branch(es)
+12. Post a reply on the Trello card using the trello MCP \`add_comment\` tool (card ID: ${cardId})
     summarizing what you changed in response to the feedback
-${doneListId ? `12. Move the Trello card back to Done using the trello MCP \`move_card\` tool (card ID: ${cardId}, list ID: ${doneListId})` : ''}
+${doneListId ? `13. Move the Trello card back to Done using the trello MCP \`move_card\` tool (card ID: ${cardId}, list ID: ${doneListId})` : ''}
 
 ## Important Rules
 
@@ -299,6 +308,7 @@ ${doneListId ? `12. Move the Trello card back to Done using the trello MCP \`mov
 - Do not open a new PR — push to the existing branch
 - Post your summary comment on the Trello card only — do NOT comment on the GitHub PR
 - Keep the response comment concise and factual
+- Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }

@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 import { config, getBoardConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { taskQueue } from '../queue/queue.js';
-import { fetchCard } from '../trello/api.js';
+import { fetchCard, fetchCardMembers } from '../trello/api.js';
 import { botMemberId } from '../trello/bot.js';
 import type {
   TrelloWebhookPayload,
@@ -226,6 +226,23 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       return;
     }
 
+    // Only process comments on cards where the bot is assigned.
+    // If the bot isn't a member, this comment isn't feedback for Claude.
+    if (botMemberId) {
+      try {
+        const members = await fetchCardMembers(card.id);
+        if (!members.includes(botMemberId)) {
+          logger.info(
+            { phase: 'webhook', cardId: card.id },
+            'Bot is not assigned to this card — ignoring comment (not feedback)',
+          );
+          return;
+        }
+      } catch (err) {
+        logger.warn({ err, phase: 'webhook', cardId: card.id }, 'Failed to check card members — proceeding with comment');
+      }
+    }
+
     // If includeLists is configured, only react to cards in those lists.
     // The commentCard webhook card stub omits idList; use data.list.id instead.
     const listId = data.list?.id ?? card.idList;
@@ -251,8 +268,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
     };
 
     await taskQueue.add('feedback', job, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 10_000 },
+      attempts: 1,
     });
 
     logger.info(

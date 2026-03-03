@@ -106,16 +106,23 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
         return;
       }
       log.warn({ exitCode }, 'Worker exited with non-zero code — posting failure comment to Trello');
-      const tail = logs.split('\n').slice(-20).join('\n');
+      const tail = logs.split('\n').filter(l => l.trim()).slice(-50).join('\n');
       await postTrelloComment(
         cardId,
         `❌ Claude exited with code ${exitCode}.\n\nLast output:\n\`\`\`\n${tail}\n\`\`\``,
       ).catch(() => {});
-      throw new Error(`Worker container exited with code ${exitCode}`);
+      // Do NOT throw — Claude exiting non-zero is an intentional signal, not a transient error.
+      // Throwing would cause BullMQ to retry, wasting API credits on the same broken state.
+      return;
     }
 
     log.info({ durationMin: Math.round(durationMs / 60_000) }, 'New task completed successfully');
   } catch (err) {
+    if (cancelledCards.has(cardShortLink)) {
+      cancelledCards.delete(cardShortLink);
+      log.info('new-task errored but card was cancelled — suppressing');
+      return;
+    }
     log.error({ err }, 'new-task job failed');
     throw err;
   }
@@ -181,16 +188,23 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
         return;
       }
       log.warn({ exitCode }, 'Feedback worker exited with non-zero code — posting failure comment to Trello');
-      const tail = logs.split('\n').slice(-20).join('\n');
+      const tail = logs.split('\n').filter(l => l.trim()).slice(-50).join('\n');
       await postTrelloComment(
         cardId,
         `❌ Claude failed to process feedback (exit ${exitCode}).\n\n\`\`\`\n${tail}\n\`\`\``,
       ).catch(() => {});
-      throw new Error(`Feedback container exited with code ${exitCode}`);
+      // Do NOT throw — Claude exiting non-zero is intentional, not transient.
+      // Retrying would waste API credits on the same state.
+      return;
     }
 
     log.info({ durationMin: Math.round(durationMs / 60_000) }, 'Feedback processed successfully');
   } catch (err) {
+    if (cancelledCards.has(cardShortLink)) {
+      cancelledCards.delete(cardShortLink);
+      log.info('feedback errored but card was cancelled — suppressing');
+      return;
+    }
     log.error({ err }, 'feedback job failed');
     throw err;
   }

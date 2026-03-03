@@ -136,10 +136,21 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
     2>&1 | node /opt/mcp/worker-logger.js
   # Capture claude's exit code (left side of pipe), not the logger's
   PLAN_EXIT=${PIPESTATUS[0]}
-  if [ "$PLAN_EXIT" -ne 0 ]; then exit "$PLAN_EXIT"; fi
+  if [ "$PLAN_EXIT" -ne 0 ]; then
+    echo "ERROR: Planning phase exited with code ${PLAN_EXIT}" >&2
+    echo "Check the logs above for the full error from Claude." >&2
+    exit "$PLAN_EXIT"
+  fi
 
   if [ ! -f /workspace/.plan.md ]; then
-    echo "ERROR: Planning phase did not produce /workspace/.plan.md — aborting" >&2
+    echo "" >&2
+    echo "========================================" >&2
+    echo "ERROR: Planning phase completed successfully (exit 0) but did not produce /workspace/.plan.md" >&2
+    echo "This means Claude ran without errors but failed to write the plan file." >&2
+    echo "The plan prompt instructs Claude to write /workspace/.plan.md — it may have" >&2
+    echo "misunderstood the task or encountered an issue reading the Trello card." >&2
+    echo "Check the full log output above for details on what Claude did." >&2
+    echo "========================================" >&2
     exit 1
   fi
 

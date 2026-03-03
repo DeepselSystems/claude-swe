@@ -64,6 +64,11 @@ export interface TrelloList {
   name: string;
 }
 
+export async function fetchCardMembers(cardId: string): Promise<string[]> {
+  const members = await trelloFetch<{ id: string }[]>(`/cards/${cardId}/members?fields=id`);
+  return members.map((m) => m.id);
+}
+
 export async function fetchMyBoards(): Promise<TrelloBoard[]> {
   return trelloFetch<TrelloBoard[]>('/members/me/boards?fields=id,name');
 }
