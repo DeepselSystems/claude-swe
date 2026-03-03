@@ -143,15 +143,9 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
   fi
 
   if [ ! -f /workspace/.plan.md ]; then
-    echo "" >&2
-    echo "========================================" >&2
-    echo "ERROR: Planning phase completed successfully (exit 0) but did not produce /workspace/.plan.md" >&2
-    echo "This means Claude ran without errors but failed to write the plan file." >&2
-    echo "The plan prompt instructs Claude to write /workspace/.plan.md — it may have" >&2
-    echo "misunderstood the task or encountered an issue reading the Trello card." >&2
-    echo "Check the full log output above for details on what Claude did." >&2
-    echo "========================================" >&2
-    exit 1
+    echo "Planning phase did not produce /workspace/.plan.md — skipping execution phase."
+    echo "Claude may have determined no action was needed (e.g. comment not directed at it)."
+    exit 0
   fi
 
   echo "=== Phase 2: Executing with ${CLAUDE_EXECUTE_MODEL:-sonnet} ==="
