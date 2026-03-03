@@ -42,12 +42,14 @@ _docker_cleanup() {
 trap _docker_cleanup EXIT
 
 # ---------------------------------------------------------------------------
-# Write MCP config to a known path and pass it via --mcp-config.
-# This is more reliable than settings file discovery (which depends on
-# $HOME and project-root detection that varies by Claude Code version).
+# Write MCP config as a settings file in the worker user's home directory.
+# NOTE: --mcp-config flag is broken in Claude Code 2.1.x (silently produces
+# zero output). Using settings.local.json in $HOME/.claude/ instead.
 # ---------------------------------------------------------------------------
-MCP_CONFIG="/tmp/mcp-config.json"
-cat > "$MCP_CONFIG" <<MCPEOF
+WORKER_HOME="/home/worker"
+CLAUDE_SETTINGS_DIR="${WORKER_HOME}/.claude"
+mkdir -p "$CLAUDE_SETTINGS_DIR"
+cat > "${CLAUDE_SETTINGS_DIR}/settings.local.json" <<MCPEOF
 {
   "mcpServers": {
     "trello": {
@@ -65,7 +67,8 @@ cat > "$MCP_CONFIG" <<MCPEOF
   }
 }
 MCPEOF
-echo "MCP config written to ${MCP_CONFIG}"
+chown -R worker:worker "$CLAUDE_SETTINGS_DIR"
+echo "MCP config written to ${CLAUDE_SETTINGS_DIR}/settings.local.json"
 
 # ---------------------------------------------------------------------------
 # Feedback fast-path: if the orchestrator wrote a prompt file to the workspace
@@ -89,12 +92,11 @@ if [ -f /workspace/.feedback-prompt ]; then
   chown -R worker:worker /workspace
 
   cd /workspace
-  gosu worker claude \
+  gosu worker env HOME="$WORKER_HOME" claude \
     --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    --mcp-config "$MCP_CONFIG" \
     "$PROMPT" \
     2>&1 | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}
@@ -126,33 +128,15 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
 
   # Two-phase: Opus plans, Sonnet executes (new tasks)
   echo "=== Phase 1: Planning with ${CLAUDE_PLAN_MODEL:-opus} ==="
-  PROMPT_LEN=${#CLAUDE_PLAN_PROMPT}
-  echo "DEBUG: Plan prompt length = ${PROMPT_LEN} bytes"
-  echo "DEBUG: Plan prompt first 200 chars: ${CLAUDE_PLAN_PROMPT:0:200}"
-  echo "DEBUG: Plan prompt last 100 chars: ${CLAUDE_PLAN_PROMPT: -100}"
-  echo "DEBUG: Running claude as user $(gosu worker whoami) with model ${CLAUDE_PLAN_MODEL:-opus}"
-  gosu worker claude \
+  gosu worker env HOME="$WORKER_HOME" claude \
     --output-format stream-json \
     --verbose \
     --model "${CLAUDE_PLAN_MODEL:-opus}" \
     --dangerously-skip-permissions \
-    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_PLAN_PROMPT}" \
-    2>&1 | tee /tmp/claude-raw-output.log | node /opt/mcp/worker-logger.js
+    2>&1 | node /opt/mcp/worker-logger.js
   # Capture claude's exit code (left side of pipe), not the logger's
   PLAN_EXIT=${PIPESTATUS[0]}
-  echo "DEBUG: Claude plan exit code = ${PLAN_EXIT}"
-  RAW_LINES=$(wc -l < /tmp/claude-raw-output.log 2>/dev/null || echo 0)
-  RAW_BYTES=$(wc -c < /tmp/claude-raw-output.log 2>/dev/null || echo 0)
-  echo "DEBUG: Raw claude output = ${RAW_LINES} lines, ${RAW_BYTES} bytes"
-  if [ "$RAW_BYTES" -gt 0 ] 2>/dev/null; then
-    echo "DEBUG: First 500 chars of raw output:"
-    head -c 500 /tmp/claude-raw-output.log
-    echo ""
-    echo "DEBUG: Last 500 chars of raw output:"
-    tail -c 500 /tmp/claude-raw-output.log
-    echo ""
-  fi
   if [ "$PLAN_EXIT" -ne 0 ]; then
     echo "ERROR: Planning phase exited with code ${PLAN_EXIT}" >&2
     echo "Check the logs above for the full error from Claude." >&2
@@ -160,29 +144,33 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
   fi
 
   if [ ! -f /workspace/.plan.md ]; then
-    echo "Planning phase did not produce /workspace/.plan.md — skipping execution phase."
-    echo "Claude may have determined no action was needed (e.g. comment not directed at it)."
-    exit 0
+    echo ""
+    echo "========================================"
+    echo "ERROR: Planning phase completed successfully (exit 0) but did not produce /workspace/.plan.md"
+    echo "This means Claude ran without errors but failed to write the plan file."
+    echo "The plan prompt instructs Claude to write /workspace/.plan.md — it may have"
+    echo "misunderstood the task or encountered an issue reading the Trello card."
+    echo "Check the full log output above for details on what Claude did."
+    echo "========================================"
+    exit 1
   fi
 
   echo "=== Phase 2: Executing with ${CLAUDE_EXECUTE_MODEL:-sonnet} ==="
-  gosu worker claude \
+  gosu worker env HOME="$WORKER_HOME" claude \
     --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_EXECUTE_PROMPT}" \
     2>&1 | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}
 else
   # Single-phase: execute model only (feedback jobs or planMode=false)
-  gosu worker claude \
+  gosu worker env HOME="$WORKER_HOME" claude \
     --output-format stream-json \
     --verbose \
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
-    --mcp-config "$MCP_CONFIG" \
     "${CLAUDE_PROMPT}" \
     2>&1 | node /opt/mcp/worker-logger.js
   exit ${PIPESTATUS[0]}
