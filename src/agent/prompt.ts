@@ -147,7 +147,7 @@ ${imageSection}
 
 The following runtimes are pre-installed via mise and available immediately (no download needed):
 - **Node.js**: 18, 20, 22
-- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14, 3.15
+- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
 - **Tools**: git, gh (GitHub CLI), docker CLI, imagemagick
 
 Use \`mise use <runtime>@<version>\` to activate a specific version, or rely on a \`.mise.toml\` / \`.python-version\` / \`.nvmrc\` file in the repo.
@@ -315,7 +315,7 @@ ${imageSection}
 
 The following runtimes are pre-installed via mise and available immediately (no download needed):
 - **Node.js**: 18, 20, 22
-- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14, 3.15
+- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
 - **Tools**: git, gh (GitHub CLI), docker CLI, imagemagick
 
 Use \`mise use <runtime>@<version>\` to activate a specific version, or rely on a \`.mise.toml\` / \`.python-version\` / \`.nvmrc\` file in the repo.
