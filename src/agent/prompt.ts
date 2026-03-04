@@ -169,6 +169,7 @@ ${imageSection}
 - Do NOT open a PR if there are failing tests
 - Write clean, idiomatic code that matches the existing codebase style
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
+- Docker is available in this environment via the \`$DOCKER_HOST\` environment variable — do not override or change \`DOCKER_HOST\`
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
 
@@ -250,6 +251,7 @@ ${buildRepoSection(repos)}
 - If anything is unclear, make a reasonable implementation choice and document it
 - Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
+- Docker is available in this environment via the \`$DOCKER_HOST\` environment variable — do not override or change \`DOCKER_HOST\`
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }
 
@@ -331,5 +333,6 @@ ${doneListId ? `13. Move the Trello card back to Done using the trello MCP \`mov
 - Keep the response comment concise and factual
 - Always use the Trello MCP tools (get_card, add_comment, move_card, etc.) — NEVER use curl or direct HTTP requests to the Trello API
 - If you use \`docker compose\` for test services, always pass \`--project-name claude-${cardShortLink}\` so services are isolated and cleaned up automatically on exit
+- Docker is available in this environment via the \`$DOCKER_HOST\` environment variable — do not override or change \`DOCKER_HOST\`
 ${additionalPrompt ? `\n## Additional Instructions\n\n${additionalPrompt}` : ''}`.trim();
 }

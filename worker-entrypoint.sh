@@ -9,17 +9,24 @@ eval "$(/root/.local/bin/mise activate bash)" 2>/dev/null || true
 # wait for the daemon to become available before proceeding.
 # ---------------------------------------------------------------------------
 if [ -n "${DOCKER_HOST:-}" ] && [[ "${DOCKER_HOST}" == unix://* ]]; then
+  DOCKER_SOCK="${DOCKER_HOST#unix://}"
   echo "Waiting for Docker daemon at ${DOCKER_HOST}..."
-  for i in $(seq 1 30); do
+  DOCKER_READY=0
+  for i in $(seq 1 60); do
     if docker info >/dev/null 2>&1; then
       echo "Docker daemon ready (attempt ${i})"
+      DOCKER_READY=1
       break
-    fi
-    if [ "$i" -eq 30 ]; then
-      echo "WARNING: Docker daemon not ready after 30s — docker commands may fail" >&2
     fi
     sleep 1
   done
+  if [ "$DOCKER_READY" -eq 0 ]; then
+    echo "WARNING: Docker daemon not ready after 60s — docker commands may fail" >&2
+  else
+    # chmod so non-root worker user can use the socket without joining the docker group
+    chmod 666 "$DOCKER_SOCK" 2>/dev/null || true
+    echo "Docker socket permissions opened: ${DOCKER_SOCK}"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
