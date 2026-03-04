@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { fetchMyBoards, fetchBoardLists } from './trello/api.js';
+import { logger } from './logger.js';
 
 // Recursively resolve "env.KEY" references in parsed JSON.
 // Any string value starting with "env." is replaced with process.env[KEY] ?? null.
@@ -119,7 +120,7 @@ export function getBoardConfig(boardId: string): BoardConfig | undefined {
 }
 
 // Resolve board/list names to IDs at startup using the Trello API.
-// Mutates config.trello.boards in-place.
+// Mutates config.trello.boards in-place. Logs errors and skips bad boards instead of throwing.
 export async function resolveNames(): Promise<void> {
   const boards = config.trello.boards;
   if (boards.length === 0) return;
@@ -131,15 +132,25 @@ export async function resolveNames(): Promise<void> {
   try {
     allBoards = await fetchMyBoards();
   } catch (err) {
-    throw new Error(`Failed to fetch Trello boards for name resolution: ${err}`);
+    logger.error({ err }, 'Failed to fetch Trello boards for name resolution — board name resolution skipped');
+    return;
   }
 
-  for (const board of boards) {
+  const toRemove: number[] = [];
+
+  for (let i = 0; i < boards.length; i++) {
+    const board = boards[i];
+
     // Resolve board name → ID
     if (!board.id) {
       const match = allBoards.find((b) => b.name === board.name);
       if (!match) {
-        throw new Error(`Trello board not found by name: "${board.name}"`);
+        logger.error(
+          { boardName: board.name },
+          `Trello board "${board.name}" not found — make sure the Claude bot user has been added as a member of the board`,
+        );
+        toRemove.push(i);
+        continue;
       }
       board.id = match.id;
     }
@@ -155,24 +166,34 @@ export async function resolveNames(): Promise<void> {
     try {
       lists = await fetchBoardLists(board.id);
     } catch (err) {
-      throw new Error(`Failed to fetch lists for board "${board.name ?? board.id}": ${err}`);
+      logger.error({ err, boardName: board.name ?? board.id }, `Failed to fetch lists for board "${board.name ?? board.id}" — skipping board`);
+      toRemove.push(i);
+      continue;
     }
 
     // Resolve includeLists names → IDs
-    board.includeLists = board.includeLists.map((entry) => {
-      if (isId(entry)) return entry;
+    let failed = false;
+    const resolvedIncludeLists: string[] = [];
+    for (const entry of board.includeLists) {
+      if (isId(entry)) { resolvedIncludeLists.push(entry); continue; }
       const match = lists.find((l) => l.name === entry);
       if (!match) {
-        throw new Error(`List not found by name "${entry}" on board "${board.name ?? board.id}"`);
+        logger.error({ boardName: board.name ?? board.id, listName: entry }, `List "${entry}" not found on board "${board.name ?? board.id}" — skipping board`);
+        failed = true;
+        break;
       }
-      return match.id;
-    });
+      resolvedIncludeLists.push(match.id);
+    }
+    if (failed) { toRemove.push(i); continue; }
+    board.includeLists = resolvedIncludeLists;
 
     // Resolve doing.list name → doing.listId
     if (board.doing?.list && !board.doing.listId) {
       const match = lists.find((l) => l.name === board.doing!.list);
       if (!match) {
-        throw new Error(`Doing list not found by name "${board.doing.list}" on board "${board.name ?? board.id}"`);
+        logger.error({ boardName: board.name ?? board.id, listName: board.doing.list }, `Doing list "${board.doing.list}" not found on board "${board.name ?? board.id}" — skipping board`);
+        toRemove.push(i);
+        continue;
       }
       board.doing.listId = match.id;
     }
@@ -181,10 +202,17 @@ export async function resolveNames(): Promise<void> {
     if (board.done?.list && !board.done.listId) {
       const match = lists.find((l) => l.name === board.done!.list);
       if (!match) {
-        throw new Error(`Done list not found by name "${board.done.list}" on board "${board.name ?? board.id}"`);
+        logger.error({ boardName: board.name ?? board.id, listName: board.done.list }, `Done list "${board.done.list}" not found on board "${board.name ?? board.id}" — skipping board`);
+        toRemove.push(i);
+        continue;
       }
       board.done.listId = match.id;
     }
+  }
+
+  // Remove boards that failed to resolve (reverse order to preserve indices)
+  for (const i of [...toRemove].reverse()) {
+    boards.splice(i, 1);
   }
 }
 
