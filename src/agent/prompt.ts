@@ -106,7 +106,7 @@ ${buildRepoSection(repos)}
      c. Include any authentication steps required to access the app, default credentials if available
      d. Specify exactly which pages/components to open in the browser, what interactions to perform, and what the result should look like
      e. To attach screenshots to Trello, the executor should save to file with \`browser_take_screenshot\` then upload via:
-        \`curl -X POST "https://api.trello.com/1/cards/{cardId}/attachments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg" -F "name=screenshot.jpeg"\`
+        \`curl -s -X POST "https://api.trello.com/1/cards/{cardId}/attachments" -F "key=$TRELLO_API_KEY" -F "token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg;type=image/jpeg" -F "name=screenshot.jpeg"\`
         Do NOT plan for base64 encoding or browser_run_code — base64 bloats the context window and causes timeouts.
      f. Skip this section only for pure backend tasks or projects with no frontend impact
    - **Done Criteria**: Exact conditions that must be true for the task to be complete
@@ -170,7 +170,7 @@ Use \`mise use <runtime>@<version>\` to activate a specific version, or rely on 
    - Skip this step only if the task or project is purely backend with zero UI impact.
    - **To attach a screenshot to Trello:** save it to a file with \`browser_take_screenshot\`,
      then upload via curl:
-     \`curl -X POST "https://api.trello.com/1/cards/{cardId}/attachments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg" -F "name=screenshot.jpeg"\`
+     \`curl -s -X POST "https://api.trello.com/1/cards/{cardId}/attachments" -F "key=$TRELLO_API_KEY" -F "token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg;type=image/jpeg" -F "name=screenshot.jpeg"\`
      Do NOT use base64 or browser_run_code for screenshots — the base64 string bloats the context window and causes timeouts.
 6. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
 7. For each repo with changes, push the branch and open a PR using the gh CLI:
@@ -252,7 +252,7 @@ ${buildRepoSection(repos)}
    f. Do NOT move forward until the UI visually matches the expected result
    g. To attach a screenshot to Trello: save it to a file with \`browser_take_screenshot\`,
       then upload via curl:
-      \`curl -X POST "https://api.trello.com/1/cards/{cardId}/attachments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg" -F "name=screenshot.jpeg"\`
+      \`curl -s -X POST "https://api.trello.com/1/cards/{cardId}/attachments" -F "key=$TRELLO_API_KEY" -F "token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg;type=image/jpeg" -F "name=screenshot.jpeg"\`
       Do NOT use base64 or browser_run_code for screenshots — the base64 string bloats the context window and causes timeouts.
    Skip this step only if the task is purely backend with zero UI impact.
 9. Commit all changes with a clear, descriptive message (do this in each repo that has changes)
@@ -350,7 +350,7 @@ Use \`mise use <runtime>@<version>\` to activate a specific version, or rely on 
    d. Iterate until the UI is correct — do NOT commit until it looks right
    e. To attach a screenshot to Trello: save it to a file with \`browser_take_screenshot\`,
       then upload via curl:
-      \`curl -X POST "https://api.trello.com/1/cards/{cardId}/attachments?key=$TRELLO_API_KEY&token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg" -F "name=screenshot.jpeg"\`
+      \`curl -s -X POST "https://api.trello.com/1/cards/{cardId}/attachments" -F "key=$TRELLO_API_KEY" -F "token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg;type=image/jpeg" -F "name=screenshot.jpeg"\`
       Do NOT use base64 or browser_run_code for screenshots — the base64 string bloats the context window and causes timeouts.
    Skip this step only if the changes are purely backend with zero UI impact.
 11. Commit and push your changes to the existing PR branch(es)
