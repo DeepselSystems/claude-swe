@@ -19,10 +19,16 @@ RUN apt-get update && apt-get install -y \
 # mise — universal runtime version manager
 # Automatically reads .mise.toml / .tool-versions / .nvmrc / .python-version
 # and installs the correct Node, Python, Go, Ruby, Rust, Java, etc.
+# MISE_DATA_DIR is set to /opt/mise so installs are accessible to the worker user (not root-home-scoped)
+ENV MISE_DATA_DIR=/opt/mise
 RUN curl https://mise.run | sh
-ENV PATH="/root/.local/share/mise/shims:/root/.local/bin:${PATH}"
+ENV PATH="/opt/mise/shims:/root/.local/bin:${PATH}"
 RUN echo 'eval "$(/root/.local/bin/mise activate bash)"' >> /root/.bashrc \
     && mise settings set experimental true
+
+# Pre-install common Node and Python versions so mise doesn't download them at runtime
+RUN mise install node@18 node@20 node@22 python@3.11 python@3.12 python@3.13 \
+    && chmod -R a+rX /opt/mise
 
 # gh CLI — used by Claude to open PRs, check status, etc.
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -47,8 +53,13 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg \
 # Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Playwright + headless Chromium
-RUN npx playwright install --with-deps chromium
+# Playwright MCP — pre-installed so npx uses the local copy without downloading at runtime
+RUN npm install -g @playwright/mcp
+
+# Install Playwright browsers to a shared path readable by all users (not /root/.cache which worker can't access)
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN $(npm root -g)/@playwright/mcp/node_modules/.bin/playwright install --with-deps chromium \
+    && chmod -R 755 /opt/ms-playwright
 
 # Trello MCP — pre-installed so npx uses local copy without downloading at runtime
 RUN npm install -g @delorenj/mcp-server-trello
