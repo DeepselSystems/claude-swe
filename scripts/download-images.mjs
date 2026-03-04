@@ -86,15 +86,15 @@ async function downloadFile(url, destPath) {
   }
 }
 
-/** Parse inline image URLs from a Trello card description. */
-function extractDescriptionImageUrls(desc) {
+/** Parse inline image URLs from a Trello card description or comment text. */
+function extractInlineImageUrls(text) {
   const urls = [];
 
-  for (const m of desc.matchAll(/!\[.*?\]\((https?:\/\/[^)]+)\)/g)) {
+  for (const m of text.matchAll(/!\[.*?\]\((https?:\/\/[^)]+)\)/g)) {
     urls.push(m[1]);
   }
 
-  for (const m of desc.matchAll(/https?:\/\/trello\.com\/\S+/g)) {
+  for (const m of text.matchAll(/https?:\/\/trello\.com\/\S+/g)) {
     const url = m[0].replace(/[)>.,]+$/, '');
     const ext = path.extname(new URL(url).pathname).toLowerCase();
     if (IMAGE_EXTENSIONS.has(ext)) {
@@ -105,11 +105,55 @@ function extractDescriptionImageUrls(desc) {
   return [...new Set(urls)];
 }
 
+/** Download images from each comment into <commentImagesDir>/<commentId>/<filename>. */
+async function downloadCommentImages(cardId, commentImagesDir) {
+  const actions = await trelloFetch(`/cards/${cardId}/actions?filter=commentCard&limit=50`);
+  console.log(`Found ${actions.length} comment(s) to scan for images`);
+
+  for (const action of actions) {
+    const commentId = action.id;
+    const text = action.data?.text ?? '';
+    const urls = extractInlineImageUrls(text);
+
+    if (urls.length === 0) continue;
+
+    const commentDir = path.join(commentImagesDir, commentId);
+    fs.mkdirSync(commentDir, { recursive: true });
+
+    let downloaded = 0;
+    for (const url of urls) {
+      if (downloaded >= MAX_IMAGES) break;
+      const ext = path.extname(new URL(url).pathname).toLowerCase();
+      const safeExt = IMAGE_EXTENSIONS.has(ext) ? ext : '.jpg';
+      // Use last path segment as filename (e.g. image.webp), falling back to index
+      const rawName = path.basename(new URL(url).pathname);
+      const filename = sanitizeFilename(rawName) || `image-${downloaded + 1}${safeExt}`;
+      const destPath = path.join(commentDir, filename);
+
+      const ok = await downloadFile(url, destPath);
+      if (ok) {
+        console.log(`  Comment ${commentId}: downloaded ${filename}`);
+        downloaded++;
+      }
+    }
+  }
+}
+
 async function main() {
-  const [cardId, destDir] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+
+  // Parse --comments <dir> flag
+  let commentImagesDir = null;
+  const commentsFlagIdx = args.indexOf('--comments');
+  if (commentsFlagIdx !== -1) {
+    commentImagesDir = args[commentsFlagIdx + 1];
+    args.splice(commentsFlagIdx, 2);
+  }
+
+  const [cardId, destDir] = args;
 
   if (!cardId || !destDir) {
-    console.error('Usage: download-images.mjs <cardId> <destDir>');
+    console.error('Usage: download-images.mjs <cardId> <destDir> [--comments <commentImagesDir>]');
     process.exit(1);
   }
 
@@ -126,6 +170,12 @@ async function main() {
     trelloFetch(`/cards/${cardId}?fields=desc`),
     trelloFetch(`/cards/${cardId}/attachments`),
   ]);
+
+  // Download comment images into per-comment subdirectories if requested
+  if (commentImagesDir) {
+    fs.mkdirSync(commentImagesDir, { recursive: true });
+    await downloadCommentImages(cardId, commentImagesDir);
+  }
 
   let downloaded = 0;
 
@@ -152,7 +202,7 @@ async function main() {
     }
   }
 
-  const descImageUrls = extractDescriptionImageUrls(card.desc ?? '');
+  const descImageUrls = extractInlineImageUrls(card.desc ?? '');
   let descIndex = 1;
 
   for (const url of descImageUrls) {

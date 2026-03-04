@@ -90,8 +90,9 @@ if [ -f /workspace/.feedback-prompt ]; then
 
   # Re-download card images so Claude sees any images attached via comments since last run
   IMAGE_DIR="/workspace/.card-images"
+  COMMENT_IMAGE_DIR="/workspace/.comment-images"
   mkdir -p "$IMAGE_DIR"
-  node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" \
+  node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
     || echo "Warning: image download failed — continuing"
 
   chown -R worker:worker /workspace
@@ -109,8 +110,9 @@ fi
 
 # Download card images for visual reference
 IMAGE_DIR="/workspace/.card-images"
+COMMENT_IMAGE_DIR="/workspace/.comment-images"
 mkdir -p "$IMAGE_DIR"
-node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" \
+node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
   || echo "Warning: image download failed or no images found — continuing"
 
 # Configure git

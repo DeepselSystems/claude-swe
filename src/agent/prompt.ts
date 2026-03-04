@@ -271,9 +271,15 @@ export function buildFeedbackPrompt(opts: FeedbackPromptOptions, additionalPromp
     ? `
 ## Visual References
 
-Reference images from the Trello card (including any images attached in comments) have been
-saved to ${imageDir}/. If the reviewer's feedback is visual (e.g. a screenshot of a bug or
-a UI mockup), check this directory — the images will be there.
+Reference images from the Trello card have been saved to ${imageDir}/.
+
+Images attached in comments are organized by comment ID:
+  /workspace/.comment-images/<comment-id>/<filename>
+
+When you read comments via \`get_card_comments\`, match each comment's \`id\` field to the
+corresponding subdirectory to find its images. For example, if a comment has id
+\`1234\` and contains a screenshot, look in:
+  /workspace/.comment-images/1234/image.webp
 `
     : '';
 
