@@ -49,6 +49,10 @@ const agentSchema = z.object({
     newTask: z.string().optional(),
     feedback: z.string().optional(),
   }).default({}),
+  git: z.object({
+    name: z.string().default('Claude SWE'),
+    email: z.string().default('claude-swe@noreply.example.com'),
+  }).default({}),
 }).default({});
 
 const configSchema = z.object({

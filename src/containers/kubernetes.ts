@@ -155,6 +155,8 @@ export class KubernetesBackend implements ContainerBackend {
                   { name: 'CLAUDE_PLAN_MODEL',     value: planModel ?? 'opus' },
                   { name: 'CLAUDE_EXECUTE_MODEL',  value: executeModel ?? 'sonnet' },
                   { name: 'CARD_SHORT_LINK',       value: cardShortLink },
+                  { name: 'GIT_AUTHOR_NAME',       value: config.agent.git.name },
+                  { name: 'GIT_AUTHOR_EMAIL',      value: config.agent.git.email },
                   { name: 'CI',                    value: '1' },
                   { name: 'TERM',                  value: 'dumb' },
                   ...(enableDinD

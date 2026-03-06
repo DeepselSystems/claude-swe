@@ -11,6 +11,10 @@
       "execute": "Additional instructions for execute mode",
       "newTask": "Additional instructions for new tasks",
       "feedback": "Additional instructions for iterating on existing tasks"
+    },
+    "git": {
+      "name": "Claude SWE",
+      "email": "claude-swe@noreply.example.com"
     }
   },
   "trello": {

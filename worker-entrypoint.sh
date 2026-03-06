@@ -123,8 +123,8 @@ node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT
   || echo "Warning: image download failed or no images found — continuing"
 
 # Configure git
-git config --global user.name "Claude SWE"
-git config --global user.email "claude-swe@noreply.example.com"
+git config --global user.name "${GIT_AUTHOR_NAME:-Claude SWE}"
+git config --global user.email "${GIT_AUTHOR_EMAIL:-claude-swe@noreply.example.com}"
 
 # Auth gh CLI
 echo "${GITHUB_TOKEN}" | gh auth login --with-token 2>/dev/null || true

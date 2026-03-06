@@ -208,6 +208,8 @@ export class DockerBackend implements ContainerBackend {
         `CLAUDE_PLAN_MODEL=${planModel ?? 'opus'}`,
         `CLAUDE_EXECUTE_MODEL=${executeModel ?? 'sonnet'}`,
         `CARD_SHORT_LINK=${cardShortLink}`,
+        `GIT_AUTHOR_NAME=${config.agent.git.name}`,
+        `GIT_AUTHOR_EMAIL=${config.agent.git.email}`,
         'CI=1',
         'TERM=dumb',
         ...(config.containers.docker.enableSocketMount
