@@ -17,6 +17,8 @@ export interface RunTaskOptions {
   isFollowUp: boolean;
   /** Done list ID to pass to the worker container, if card should be moved on completion */
   doneListId?: string;
+  /** Abort signal — if fired, the backend should kill the container and throw AbortError */
+  signal?: AbortSignal;
 }
 
 export interface WorkerInfo {

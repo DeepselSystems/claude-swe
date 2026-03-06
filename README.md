@@ -36,7 +36,7 @@ Each worker container has:
 2. **Orchestrator** enqueues a `new-task` job
 3. **Worker** clones the repo into a persistent Docker volume, spins up a container
 4. **Claude Code** (inside the container) reads the card via Trello MCP, installs deps via `mise`, codes, tests (including Playwright visual tests), opens a PR, moves card to Done
-5. **Human comments** on the card → another webhook → a Haiku guard call checks whether the comment is directed at the agent (human-to-human chatter is silently skipped) → orchestrator re-uses the same volume, runs Claude again with the feedback as a follow-up prompt
+5. **Human comments** on the card → another webhook → a Haiku guard call checks whether the comment is directed at the agent (human-to-human chatter is silently skipped) → if a feedback container is already running for that card, it is killed immediately so the latest comment is always processed without delay → orchestrator re-uses the same volume, runs Claude again with the feedback as a follow-up prompt
 6. **PR merged/closed** → GitHub webhook → orchestrator destroys the container and volume
 
 ## Setup

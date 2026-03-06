@@ -47,6 +47,52 @@ function createSingleFileTar(filePath: string, content: string): Buffer {
   return Buffer.concat([header, paddedData, Buffer.alloc(BLOCK * 2, 0)]);
 }
 
+/**
+ * Waits for a container to stop. If the abort signal fires first,
+ * stops the container and throws an AbortError so the caller can suppress
+ * failure comments for superseded feedback jobs.
+ */
+async function waitWithAbort(
+  container: Docker.Container,
+  signal: AbortSignal | undefined,
+  log: typeof logger,
+): Promise<{ StatusCode: number }> {
+  if (!signal) {
+    return container.wait();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      log.info('Abort signal received — stopping container (superseded by newer feedback)');
+      container.stop({ t: 5 }).catch(() => {});
+      const err = new Error('Feedback job superseded by newer comment');
+      err.name = 'AbortError';
+      reject(err);
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    container.wait().then(
+      (result) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        resolve(result);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 export class DockerBackend implements ContainerBackend {
   private docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
@@ -59,7 +105,7 @@ export class DockerBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal } = opts;
     const name = this.containerName(cardShortLink);
     const vol = this.volumeName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'docker', container: name });
@@ -70,10 +116,10 @@ export class DockerBackend implements ContainerBackend {
         const container = this.docker.getContainer(name);
         const info = await container.inspect();
 
-        // If still running (previous task hasn't finished), wait for it first
+        // If still running (previous task hasn't finished), kill it — a newer comment supersedes it
         if (info.State.Running) {
-          log.info('Feedback: previous container still running — waiting for it to stop');
-          await container.wait();
+          log.info('Feedback: previous container still running — stopping it to process newer comment');
+          await container.stop({ t: 5 });
         }
 
         log.info('Feedback: writing prompt file into stopped container via putArchive');
@@ -84,7 +130,7 @@ export class DockerBackend implements ContainerBackend {
         await container.start();
 
         const startTime = Date.now();
-        const { StatusCode } = await container.wait();
+        const { StatusCode } = await waitWithAbort(container, signal, log);
         const durationMs = Date.now() - startTime;
         log.info(
           { exitCode: StatusCode, durationMs, durationMin: Math.round(durationMs / 60_000) },
@@ -97,6 +143,7 @@ export class DockerBackend implements ContainerBackend {
 
         return { exitCode: StatusCode, logs };
       } catch (err) {
+        if ((err as Error).name === 'AbortError') throw err;
         log.warn({ err }, 'Feedback: could not reuse existing container — falling back to fresh container');
         // Fall through to the new-container path below
       }
@@ -196,7 +243,7 @@ export class DockerBackend implements ContainerBackend {
     log.info('Worker container started — waiting for it to exit');
 
     const startTime = Date.now();
-    const { StatusCode } = await container.wait();
+    const { StatusCode } = await waitWithAbort(container, signal, log);
     const durationMs = Date.now() - startTime;
     log.info(
       { exitCode: StatusCode, durationMs, durationMin: Math.round(durationMs / 60_000) },

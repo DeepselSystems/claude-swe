@@ -57,7 +57,7 @@ When a task starts, a UUID-token log session is created (`src/logs/store.ts`) an
 ### Job Types
 
 - `new-task` — new card assigned to bot; 3 attempts with exponential backoff
-- `feedback` — human comment on card; 3 attempts with exponential backoff
+- `feedback` — human comment on card; passes Haiku guard first (non-agent comments skipped); if a feedback container is already running for that card, it is killed immediately and the new comment takes over — always works on the latest feedback
 - `cleanup` — PR closed; destroy container + volume
 - `cancel` — bot removed from card mid-flight; drain pending jobs, kill container, post comment
 

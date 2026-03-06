@@ -48,7 +48,7 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal } = opts;
     const jobName = this.jobName(cardShortLink);
     const pvcName = this.pvcName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'k8s', job: jobName, namespace: this.namespace });
@@ -211,7 +211,7 @@ export class KubernetesBackend implements ContainerBackend {
     await this.batchApi.createNamespacedJob(this.namespace, job);
     log.info('K8s job created — entering wait loop');
 
-    return this.waitForJob(jobName, log);
+    return this.waitForJob(jobName, signal, log);
   }
 
   private async ensurePvc(
@@ -241,6 +241,7 @@ export class KubernetesBackend implements ContainerBackend {
 
   private async waitForJob(
     jobName: string,
+    signal: AbortSignal | undefined,
     log: typeof logger,
   ): Promise<{ exitCode: number; logs: string }> {
     // Poll until the Job reports Complete or Failed
@@ -250,6 +251,18 @@ export class KubernetesBackend implements ContainerBackend {
     while (true) {
       await sleep(5000);
       pollCount++;
+
+      // Check abort signal each poll — a newer feedback comment has superseded this job
+      if (signal?.aborted) {
+        log.info('Abort signal received — deleting K8s job (superseded by newer feedback)');
+        await this.batchApi.deleteNamespacedJob(
+          jobName, this.namespace,
+          undefined, undefined, 0, undefined, 'Background',
+        ).catch(() => {});
+        const err = new Error('Feedback job superseded by newer comment');
+        err.name = 'AbortError';
+        throw err;
+      }
 
       const { body: job } = await this.batchApi.readNamespacedJob(jobName, this.namespace);
       const conditions = job.status?.conditions ?? [];

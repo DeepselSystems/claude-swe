@@ -20,6 +20,11 @@ const connection = {
 // Used to suppress spurious failure comments when a container is killed by cancellation.
 const cancelledCards = new Set<string>();
 
+// Active feedback jobs keyed by cardShortLink.
+// When a new feedback comment passes the guard, the old job is aborted so we always
+// work on the latest comment rather than waiting for the previous one to finish.
+const activeFeedbackJobs = new Map<string, AbortController>();
+
 export const worker = new Worker(
   'tasks',
   async (job: Job) => {
@@ -139,12 +144,22 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
     'Picked up feedback job',
   );
 
-  // Guard: skip if the comment isn't directed at the agent
+  // Guard: skip if the comment isn't directed at the agent.
+  // This runs BEFORE aborting any existing job — casual human comments must not kill running work.
   const isForAgent = await shouldProcessFeedback(commentText, commenterName, cardName);
   if (!isForAgent) {
     log.info({ commenter: commenterName }, 'Guard determined comment is not for the agent — skipping');
     return;
   }
+
+  // Abort any in-flight feedback job for this card — the newest comment supersedes it.
+  const existing = activeFeedbackJobs.get(cardShortLink);
+  if (existing) {
+    log.info('Aborting previous feedback job — newer comment will be processed instead');
+    existing.abort();
+  }
+  const abortController = new AbortController();
+  activeFeedbackJobs.set(cardShortLink, abortController);
 
   const branchName = `claude/${cardShortLink}`;
   const repos = getBoardRepos(boardId);
@@ -182,6 +197,7 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
       executeModel: config.agent.models.execute,
       isFollowUp: true,
       doneListId: job.data.doneListId,
+      signal: abortController.signal,
     });
 
     const durationMs = Date.now() - startTime;
@@ -209,6 +225,11 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
 
     log.info({ durationMin: Math.round(durationMs / 60_000) }, 'Feedback processed successfully');
   } catch (err) {
+    // Suppress failure comment when this job was superseded by a newer feedback comment
+    if ((err as Error).name === 'AbortError') {
+      log.info('Feedback job was superseded by a newer comment — suppressing failure comment');
+      return;
+    }
     if (cancelledCards.has(cardShortLink)) {
       cancelledCards.delete(cardShortLink);
       log.info('feedback errored but card was cancelled — suppressing');
@@ -216,6 +237,11 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
     }
     log.error({ err }, 'feedback job failed');
     throw err;
+  } finally {
+    // Clean up the map entry only if we're still the active job for this card
+    if (activeFeedbackJobs.get(cardShortLink) === abortController) {
+      activeFeedbackJobs.delete(cardShortLink);
+    }
   }
 }
 
