@@ -358,7 +358,10 @@ Use \`mise use <runtime>@<version>\` to activate a specific version, or rely on 
       \`curl -s -X POST "https://api.trello.com/1/cards/{cardId}/attachments" -F "key=$TRELLO_API_KEY" -F "token=$TRELLO_TOKEN" -F "file=@/tmp/screenshot.jpeg;type=image/jpeg" -F "name=screenshot.jpeg"\`
       Do NOT use base64 or browser_run_code for screenshots — the base64 string bloats the context window and causes timeouts.
    Skip this step only if the changes are purely backend with zero UI impact.
-11. Commit and push your changes to the existing PR branch(es)
+11. Commit and push your changes:
+    - Check if the branch still exists on the remote: \`git ls-remote --heads origin claude/${cardShortLink}\`
+    - If it exists: push to it (the PR should still be open)
+    - If it was deleted (previous PR was merged/closed): create the branch fresh and open a new PR with \`gh pr create\`
 12. Post a reply on the Trello card using the trello MCP \`add_comment\` tool (card ID: ${cardId})
     summarizing what you changed in response to the feedback
 ${doneListId ? `13. Move the Trello card back to Done using the trello MCP \`move_card\` tool (card ID: ${cardId}, list ID: ${doneListId})` : ''}
@@ -366,7 +369,7 @@ ${doneListId ? `13. Move the Trello card back to Done using the trello MCP \`mov
 ## Important Rules
 
 - Only make changes directly related to the feedback
-- Do not open a new PR — push to the existing branch
+- Push to the existing branch if it still exists; if the branch was deleted, create it fresh and open a new PR
 - Post your summary comment on the Trello card only — do NOT comment on the GitHub PR
 - Keep the response comment concise and factual
 - Prefer Trello MCP tools for reading/writing card data (get_card, add_comment, move_card, etc.) — use curl only for file uploads (attachments)

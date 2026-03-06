@@ -76,6 +76,7 @@ export interface CleanupJob {
   cardShortLink: string;
   prUrl?: string;
   reason: 'merged' | 'closed';
+  repoFullName?: string; // e.g. "owner/repo" — the repo whose PR was just closed
 }
 
 export interface CancelJob {

@@ -365,6 +365,7 @@ async function routeGitHubPR(payload: GitHubPRWebhookPayload): Promise<void> {
     cardShortLink,
     prUrl: pull_request.html_url,
     reason: pull_request.merged ? 'merged' : 'closed',
+    repoFullName: payload.repository.full_name,
   };
 
   await taskQueue.add('cleanup', job);

@@ -183,6 +183,14 @@ export class DockerBackend implements ContainerBackend {
       },
     });
 
+    // Feedback fallback: inject .feedback-prompt so the entrypoint takes the fast-path.
+    // This mirrors what the fast-path does at the top of runTask (putArchive into stopped container).
+    if (isFollowUp && prompt) {
+      log.info('Feedback fallback: injecting .feedback-prompt into fresh container');
+      const tar = createSingleFileTar('workspace/.feedback-prompt', prompt);
+      await container.putArchive(tar, { path: '/' });
+    }
+
     log.info('Starting worker container');
     await container.start();
     log.info('Worker container started — waiting for it to exit');

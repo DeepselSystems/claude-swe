@@ -4,7 +4,8 @@ import { taskQueue } from './queue.js';
 import { logger } from '../logger.js';
 import { runTaskInContainer, destroyTaskContainer } from '../containers/manager.js';
 import { buildPlanPrompt, buildExecutePrompt, buildNewTaskPrompt, buildFeedbackPrompt } from '../agent/prompt.js';
-import { getBoardRepos } from '../workspace/repo.js';
+import { getBoardRepos, getAllRepoSlugs } from '../workspace/repo.js';
+import { findOpenPRsForBranch } from '../github/pr.js';
 import { postTrelloComment, moveCardToList } from '../trello/api.js';
 import { createLogSession, removeLogSessionByCard } from '../logs/store.js';
 import type { NewTaskJob, FeedbackJob, CleanupJob, CancelJob } from '../webhook/types.js';
@@ -211,10 +212,27 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
 }
 
 async function handleCleanup(job: Job<CleanupJob>): Promise<void> {
-  const { cardShortLink, prUrl, reason } = job.data;
+  const { cardShortLink, prUrl, reason, repoFullName } = job.data;
   const log = logger.child({ phase: 'cleanup', jobId: job.id, cardShortLink });
 
-  log.info({ prUrl, reason }, 'Picked up cleanup job — destroying container and volume');
+  log.info({ prUrl, reason, repoFullName }, 'Picked up cleanup job — checking for remaining open PRs');
+
+  const branch = `claude/${cardShortLink}`;
+  const repoSlugs = getAllRepoSlugs();
+
+  if (repoSlugs.length > 0) {
+    try {
+      const openPRs = await findOpenPRsForBranch(branch, repoSlugs);
+      if (openPRs.length > 0) {
+        log.info({ openPRs }, 'Skipping cleanup — other PRs still open on this branch');
+        return;
+      }
+    } catch (err) {
+      log.warn({ err }, 'Failed to check for open PRs — proceeding with cleanup as safety fallback');
+    }
+  }
+
+  log.info({ prUrl, reason }, 'No remaining open PRs — destroying container and volume');
   await destroyTaskContainer(cardShortLink);
   await removeLogSessionByCard(cardShortLink);
   log.info({ prUrl, reason }, 'Cleanup complete — container and volume destroyed');
