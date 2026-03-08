@@ -140,6 +140,8 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
   gosu worker sh -c 'which claude && claude --version' 2>&1 || echo "WARNING: claude not found in worker PATH"
 
   # Two-phase: Opus plans, Sonnet executes (new tasks)
+  COST_FILE="/tmp/phase-costs.json"
+  rm -f "$COST_FILE"
   echo "=== Phase 1: Planning with ${CLAUDE_PLAN_MODEL:-opus} ==="
   gosu worker env HOME="$WORKER_HOME" claude \
     --output-format stream-json \
@@ -147,7 +149,7 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
     --model "${CLAUDE_PLAN_MODEL:-opus}" \
     --dangerously-skip-permissions \
     "${CLAUDE_PLAN_PROMPT}" \
-    2>&1 | node /opt/mcp/worker-logger.js
+    2>&1 | node /opt/mcp/worker-logger.js "$COST_FILE"
   # Capture claude's exit code (left side of pipe), not the logger's
   PLAN_EXIT=${PIPESTATUS[0]}
   if [ "$PLAN_EXIT" -ne 0 ]; then
@@ -175,7 +177,7 @@ if [ -n "${CLAUDE_PLAN_PROMPT:-}" ]; then
     --model "${CLAUDE_EXECUTE_MODEL:-sonnet}" \
     --dangerously-skip-permissions \
     "${CLAUDE_EXECUTE_PROMPT}" \
-    2>&1 | node /opt/mcp/worker-logger.js
+    2>&1 | node /opt/mcp/worker-logger.js "$COST_FILE"
   exit ${PIPESTATUS[0]}
 else
   # Single-phase: execute model only (feedback jobs or planMode=false)

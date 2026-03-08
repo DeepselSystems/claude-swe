@@ -3,6 +3,9 @@
 // Exits with the code from the final "result" event (0 = success, 1 = error/cancelled).
 
 const readline = require('readline');
+const fs = require('fs');
+
+const costFile = process.argv[2] || null;
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
@@ -99,6 +102,23 @@ rl.on('line', (line) => {
         if (usage?.output_tokens != null) parts.push(`out: ${usage.output_tokens.toLocaleString()}`);
         if (cost != null) parts.push(`cost: $${cost.toFixed(4)}`);
         if (parts.length) console.log(`[cost]       ${parts.join(' | ')}`);
+      }
+      if (costFile && (usage || cost != null)) {
+        let entries = [];
+        try { entries = JSON.parse(fs.readFileSync(costFile, 'utf8')); } catch {}
+        entries.push({
+          input_tokens: usage?.input_tokens ?? 0,
+          output_tokens: usage?.output_tokens ?? 0,
+          cost: cost ?? 0,
+        });
+        fs.writeFileSync(costFile, JSON.stringify(entries));
+        if (entries.length > 1) {
+          const totIn = entries.reduce((s, e) => s + e.input_tokens, 0);
+          const totOut = entries.reduce((s, e) => s + e.output_tokens, 0);
+          const totCost = entries.reduce((s, e) => s + e.cost, 0);
+          const tparts = [`in: ${totIn.toLocaleString()}`, `out: ${totOut.toLocaleString()}`, `cost: $${totCost.toFixed(4)}`];
+          console.log(`[total_cost] ${tparts.join(' | ')}`);
+        }
       }
       break;
     }
