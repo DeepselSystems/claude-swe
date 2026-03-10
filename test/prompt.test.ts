@@ -58,8 +58,8 @@ describe('buildNewTaskPrompt', () => {
     });
     expect(prompt).toContain('/workspace/.card-images');
     expect(prompt).toContain('Playwright');
-    expect(prompt).toContain('Visual References');
-    expect(prompt).toContain('browser verification');
+    expect(prompt).toContain('Visual verification');
+    expect(prompt).toContain('browser_take_screenshot');
   });
 
   it('omits visual sections when no imageDir is provided', () => {
@@ -101,7 +101,7 @@ describe('buildFeedbackPrompt', () => {
     expect(prompt).toContain('https://trello.com/c/xyz');
   });
 
-  it('tells Claude not to open a new PR', () => {
+  it('tells Claude to push to existing branch by default', () => {
     const prompt = buildFeedbackPrompt({
       cardId: 'card-456',
       cardShortLink: 'xyz',
@@ -111,6 +111,7 @@ describe('buildFeedbackPrompt', () => {
       repos: [],
     });
     expect(prompt).toContain('existing branch');
-    expect(prompt).not.toContain('gh pr create');
+    // gh pr create is allowed only as a fallback when the branch was deleted
+    expect(prompt).toContain('If it was deleted');
   });
 });
