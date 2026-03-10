@@ -19,6 +19,8 @@ export interface RunTaskOptions {
   doneListId?: string;
   /** Abort signal — if fired, the backend should kill the container and throw AbortError */
   signal?: AbortSignal;
+  /** Additional environment variables to pass to the worker container */
+  extraEnv?: Record<string, string>;
 }
 
 export interface WorkerInfo {

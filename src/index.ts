@@ -6,6 +6,7 @@ import { listWorkerContainers } from './containers/manager.js';
 import { worker, gracefulShutdown } from './queue/worker.js';
 import { initBotMemberId } from './trello/bot.js';
 import { handleLogViewer, handleLogStream } from './logs/handler.js';
+import { startSlack, isSlackConfigured } from './slack/client.js';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.get('/health', (_req, res) => {
     trello: config.trello.token !== null,
     github: config.github.token !== null,
     anthropic: config.anthropic.apiKey !== null,
+    slack: isSlackConfigured(),
   });
 });
 
@@ -121,6 +123,7 @@ process.on('unhandledRejection', (reason) => {
   await initBotMemberId();
   await resolveNames();
   await ensureTrelloWebhooks();
+  await startSlack();
 
   const server = app.listen(config.server.port, () => {
     logger.info({ port: config.server.port }, 'Webhook server listening');

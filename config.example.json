@@ -36,6 +36,16 @@
       }
     ]
   },
+  "slack": {
+    "botToken": "env.SLACK_BOT_TOKEN",
+    "appToken": "env.SLACK_APP_TOKEN",
+    "signingSecret": "env.SLACK_SIGNING_SECRET",
+    "channels": {
+      "C0123ABCDEF": {
+        "repos": ["https://github.com/myorg/my-app"]
+      }
+    }
+  },
   "github": {
     "token": "env.GITHUB_TOKEN",
     "webhookSecret": "env.GITHUB_WEBHOOK_SECRET"

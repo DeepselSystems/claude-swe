@@ -3,6 +3,8 @@ import type { Logger } from 'pino';
 import { logger } from '../logger.js';
 import { destroyTaskContainer } from '../containers/manager.js';
 import { postTrelloComment, moveCardToList, archiveCard } from '../trello/api.js';
+import { postStatus } from '../notify.js';
+import { getTaskSource } from '../webhook/types.js';
 import type { GuardResult } from './guard.js';
 import type { FeedbackJob, NewTaskJob } from '../webhook/types.js';
 
@@ -24,27 +26,41 @@ export async function executeOperation(
   boardLists: { id: string; name: string }[],
   context: OperationContext,
 ): Promise<void> {
-  const { cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId } = jobData;
+  const { cardShortLink, cardDesc, doingListId, doneListId } = jobData;
+  const cardId = jobData.cardId;
+  const boardId = jobData.boardId;
+  const cardName = jobData.cardName;
+  const cardUrl = jobData.cardUrl;
   const { cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue } = context;
   const log = logger.child({ phase: 'operation', action: result.action, cardShortLink });
+  const source = getTaskSource(jobData);
 
   log.info({ target: result.target }, 'Executing operational command');
 
   switch (result.action) {
     case 'stop':
-      await executeStop({ cardId, cardShortLink, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
+      await executeStop({ cardShortLink, source, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
       break;
 
     case 'move':
-      await executeMove({ cardId, cardShortLink, target: result.target, boardLists, log });
+      if (source.type !== 'trello' || !cardId) {
+        await postStatus(source, '⚠️ The `move` command is only available for Trello-originated tasks.').catch(() => {});
+      } else {
+        await executeMove({ cardId, cardShortLink, target: result.target, boardLists, log });
+      }
       break;
 
     case 'restart':
-      await executeRestart({ cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
+      await executeRestart({ cardId, cardShortLink, cardName, cardUrl, cardDesc: cardDesc ?? '', boardId, doingListId, doneListId, source, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
       break;
 
     case 'archive':
-      await executeArchive({ cardId, cardShortLink, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
+      if (source.type !== 'trello' || !cardId) {
+        // For Slack tasks, "archive" means stop + cleanup (no Trello card to archive)
+        await executeStop({ cardShortLink, source, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
+      } else {
+        await executeArchive({ cardId, cardShortLink, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log });
+      }
       break;
 
     default:
@@ -55,15 +71,15 @@ export async function executeOperation(
 // --- Individual operation handlers ---
 
 async function executeStop(opts: {
-  cardId: string;
   cardShortLink: string;
+  source: ReturnType<typeof getTaskSource>;
   cancelledCards: Set<string>;
   activeNewTaskJobs: Map<string, AbortController>;
   activeFeedbackJobs: Map<string, AbortController>;
   taskQueue: Queue;
   log: Logger;
 }): Promise<void> {
-  const { cardId, cardShortLink, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log } = opts;
+  const { cardShortLink, source, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log } = opts;
 
   cancelledCards.add(cardShortLink);
 
@@ -88,8 +104,8 @@ async function executeStop(opts: {
   await destroyTaskContainer(cardShortLink);
   log.info('Container destroyed');
 
-  await postTrelloComment(cardId, '🛑 Stopped. Worker has been killed and cleaned up.').catch((err) =>
-    log.warn({ err }, 'Failed to post stop confirmation comment'),
+  await postStatus(source, '🛑 Stopped. Worker has been killed and cleaned up.').catch((err) =>
+    log.warn({ err }, 'Failed to post stop confirmation'),
   );
 }
 
@@ -100,7 +116,7 @@ async function executeMove(opts: {
   boardLists: { id: string; name: string }[];
   log: Logger;
 }): Promise<void> {
-  const { cardId, cardShortLink, target, boardLists, log } = opts;
+  const { cardId, target, boardLists, log } = opts;
 
   if (!target) {
     await postTrelloComment(cardId, '⚠️ No list name specified. Available lists:\n' + boardLists.map((l) => `- ${l.name}`).join('\n')).catch(() => {});
@@ -126,21 +142,22 @@ async function executeMove(opts: {
 }
 
 async function executeRestart(opts: {
-  cardId: string;
+  cardId?: string;
   cardShortLink: string;
   cardName: string;
   cardUrl: string;
   cardDesc: string;
-  boardId: string;
+  boardId?: string;
   doingListId?: string;
   doneListId?: string;
+  source: ReturnType<typeof getTaskSource>;
   cancelledCards: Set<string>;
   activeNewTaskJobs: Map<string, AbortController>;
   activeFeedbackJobs: Map<string, AbortController>;
   taskQueue: Queue;
   log: Logger;
 }): Promise<void> {
-  const { cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log } = opts;
+  const { cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId, source, cancelledCards, activeNewTaskJobs, activeFeedbackJobs, taskQueue, log } = opts;
 
   // Stop everything first (same as stop operation)
   cancelledCards.add(cardShortLink);
@@ -167,12 +184,12 @@ async function executeRestart(opts: {
   cancelledCards.delete(cardShortLink);
 
   // Re-enqueue as a fresh new-task
-  const newTaskJob: NewTaskJob = { cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId };
+  const newTaskJob: NewTaskJob = { cardId, cardShortLink, cardName, cardUrl, cardDesc, boardId, doingListId, doneListId, source };
   await taskQueue.add('new-task', newTaskJob, { attempts: 1 });
   log.info('Re-enqueued new-task job for restart');
 
-  await postTrelloComment(cardId, '🔄 Restarting from scratch. A fresh worker will spin up shortly.').catch((err) =>
-    log.warn({ err }, 'Failed to post restart confirmation comment'),
+  await postStatus(source, '🔄 Restarting from scratch. A fresh worker will spin up shortly.').catch((err) =>
+    log.warn({ err }, 'Failed to post restart confirmation'),
   );
 }
 

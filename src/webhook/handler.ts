@@ -6,6 +6,8 @@ import { logger } from '../logger.js';
 import { taskQueue } from '../queue/queue.js';
 import { fetchCard, fetchCardMembers } from '../trello/api.js';
 import { botMemberId, initBotMemberId } from '../trello/bot.js';
+import { getSlackThreadByTask } from '../slack/id.js';
+import { postSlackReply } from '../slack/client.js';
 import type {
   TrelloWebhookPayload,
   GitHubPRWebhookPayload,
@@ -145,6 +147,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       boardId: board.id,
       doingListId: boardConfig.doing?.listId,
       doneListId: boardConfig.done?.listId,
+      source: { type: 'trello', cardId: card.id },
     };
 
     await taskQueue.add('new-task', job, {
@@ -197,6 +200,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
     const job: CancelJob = {
       cardId: card.id,
       cardShortLink: fullCard.shortLink,
+      source: { type: 'trello', cardId: card.id },
     };
 
     await taskQueue.add('cancel', job);
@@ -273,6 +277,7 @@ async function routeTrelloAction(action: TrelloWebhookPayload['action']): Promis
       commenterName: memberCreator.fullName,
       doingListId: boardConfig.doing?.listId,
       doneListId: boardConfig.done?.listId,
+      source: { type: 'trello', cardId: card.id },
     };
 
     await taskQueue.add('feedback', job, {
@@ -412,4 +417,17 @@ async function routeGitHubPR(payload: GitHubPRWebhookPayload): Promise<void> {
     { phase: 'webhook', cardShortLink, pr: pull_request.html_url, reason: job.reason },
     'Enqueued cleanup job for closed PR',
   );
+
+  // Notify Slack thread if this was a Slack-originated task
+  const slackThread = await getSlackThreadByTask(cardShortLink).catch(() => null);
+  if (slackThread) {
+    const verb = pull_request.merged ? 'merged' : 'closed';
+    await postSlackReply(
+      slackThread.channelId,
+      slackThread.threadTs,
+      `✅ PR ${verb}: ${pull_request.html_url}\n\nContainer and workspace cleaned up.`,
+    ).catch((err) =>
+      logger.warn({ err, cardShortLink }, 'Failed to post Slack PR cleanup notification'),
+    );
+  }
 }

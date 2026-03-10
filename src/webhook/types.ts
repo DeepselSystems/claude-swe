@@ -48,29 +48,65 @@ export interface TrelloWebhookPayload {
   model: TrelloBoard;
 }
 
+// Discriminated union tracking which platform originated a task.
+// Trello source: cardId is the Trello card ID.
+// Slack source: channelId + threadTs identify the thread; trelloCardId is set if a card was linked.
+export type TaskSource =
+  | { type: 'trello'; cardId: string }
+  | { type: 'slack'; channelId: string; threadTs: string; trelloCardId?: string };
+
+/** Derive the task source from a job, defaulting to Trello for backward compat. */
+export function getTaskSource(job: { source?: TaskSource; cardId?: string }): TaskSource {
+  if (job.source) return job.source;
+  return { type: 'trello', cardId: job.cardId! };
+}
+
+/** Reference to a Slack file attachment to be downloaded inside the worker container */
+export interface SlackFileRef {
+  url: string;
+  name: string;
+}
+
 // Normalized job data passed to the queue
 export interface NewTaskJob {
-  cardId: string;
+  // Generic task identifier — Trello shortLinks or s-prefixed Slack IDs
   cardShortLink: string;
   cardName: string;
   cardDesc: string;
   cardUrl: string;
-  boardId: string;
+  // Trello-specific (undefined for Slack-only tasks)
+  cardId?: string;
+  boardId?: string;
   doingListId?: string;
   doneListId?: string;
+  // Source tracking
+  source?: TaskSource;
+  // Slack tasks carry their own resolved repos (Trello tasks resolve from boardId at runtime)
+  repos?: string[];
+  // Slack tasks embed the task description directly
+  taskDescription?: string;
+  // Slack file attachments to download inside the worker container
+  slackFiles?: SlackFileRef[];
 }
 
 export interface FeedbackJob {
-  cardId: string;
   cardShortLink: string;
   cardName: string;
   cardUrl: string;
   cardDesc: string;
-  boardId: string;
   commentText: string;
   commenterName: string;
+  // Trello-specific
+  cardId?: string;
+  boardId?: string;
   doingListId?: string;
   doneListId?: string;
+  // Source tracking
+  source?: TaskSource;
+  // Repos for Slack tasks
+  repos?: string[];
+  // Slack file attachments to download inside the worker container
+  slackFiles?: SlackFileRef[];
 }
 
 export interface CleanupJob {
@@ -78,11 +114,13 @@ export interface CleanupJob {
   prUrl?: string;
   reason: 'merged' | 'closed' | 'archived';
   repoFullName?: string; // e.g. "owner/repo" — the repo whose PR was just closed
+  source?: TaskSource;
 }
 
 export interface CancelJob {
-  cardId: string;
   cardShortLink: string;
+  cardId?: string;
+  source?: TaskSource;
 }
 
 // GitHub webhook payloads (subset of what we need)

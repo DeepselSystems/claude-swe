@@ -79,6 +79,14 @@ const configSchema = z.object({
     host: z.string().default('redis'),
     port: z.number().default(6379),
   }),
+  slack: z.object({
+    botToken: z.string().nullable().default(null),
+    appToken: z.string().nullable().default(null),
+    signingSecret: z.string().nullable().default(null),
+    channels: z.record(z.string(), z.object({
+      repos: z.array(z.string().url()).default([]),
+    })).default({}),
+  }).default({}),
   containers: z.object({
     backend: z.enum(['docker', 'kubernetes']).default('docker'),
     workerImage: z.string().default('claude-swe-worker:latest'),

@@ -1,43 +1,43 @@
 # Claude SWE Agent
 
-Autonomous development agent: assign the Claude bot user to a Trello card → Claude codes it, tests it, opens a PR, and moves the card to Done. When humans comment on the card, Claude reads the feedback and updates the PR.
+Autonomous development agent: assign the Claude bot user to a Trello card (or mention the bot in Slack) → Claude codes it, tests it, opens a PR, and moves the card to Done. When humans comment on the card or reply in the Slack thread, Claude reads the feedback and updates the PR.
 
 Each task runs in its own isolated Docker container with persistent storage. The container has `mise` (universal runtime manager) so Claude auto-detects and installs whatever the project needs — Node, Python, Go, Rust, Ruby, etc. When the PR is merged or closed, the container and volume are automatically cleaned up.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│ Orchestrator (lightweight Node.js server)       │
-│                                                 │
-│  Trello webhook ─┬─► Task Queue (BullMQ/Redis)  │
-│  GitHub webhook ─┘        │                     │
-│                           ▼                     │
-│               Container Manager (docker/k8s)    │
-│                 │           │          │        │
-│                 ▼           ▼          ▼        │
-│            ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│            │Worker #1│ │Worker #2│ │Worker #3│  │
-│            │(card A) │ │(card B) │ │(card C) │  │
-│            └────┬────┘ └────┬────┘ └────┬────┘  │
-│                 │           │           │       │
-│               vol-A       vol-B       vol-C     │
-│             (persist)   (persist)   (persist)   │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ Orchestrator (lightweight Node.js server)            │
+│                                                      │
+│  Trello webhook ─┬─► Task Queue (BullMQ/Redis)       │
+│  GitHub webhook  │        │                          │
+│  Slack (Socket) ─┘        ▼                          │
+│                  Container Manager (docker/k8s)      │
+│                    │           │          │          │
+│                    ▼           ▼          ▼          │
+│               ┌─────────┐ ┌─────────┐ ┌─────────┐   │
+│               │Worker #1│ │Worker #2│ │Worker #3│   │
+│               │(task A) │ │(task B) │ │(task C) │   │
+│               └────┬────┘ └────┬────┘ └────┬────┘   │
+│                    │           │           │        │
+│                  vol-A       vol-B       vol-C      │
+│                (persist)   (persist)   (persist)    │
+└──────────────────────────────────────────────────────┘
 
 Each worker container has:
   mise, Claude Code CLI, Playwright + Chromium, gh CLI,
-  build-essential, python3, Trello MCP server
+  build-essential, python3, Trello MCP server (optional)
 ```
 
 ### Lifecycle
 
-1. **Trello webhook** fires when you assign the bot user to a card in a watched list
+1. **Trello webhook** fires when you assign the bot user to a card in a watched list — OR — **Slack** when you `@mention` the bot in a channel
 2. **Orchestrator** enqueues a `new-task` job
 3. **Worker** clones the repo into a persistent Docker volume, spins up a container
-4. **Claude Code** (inside the container) reads the card via Trello MCP, installs deps via `mise`, codes, tests (including Playwright visual tests), opens a PR, moves card to Done
-5. **Human comments** on the card → another webhook → a Haiku guard call classifies the comment: (a) human-to-human chatter is silently skipped; (b) **operational commands** (`stop`, `move <list>`, `restart`, `archive`) are executed immediately by the orchestrator without spinning up a container; (c) code feedback kills any running container for that card and re-runs Claude with the comment as a follow-up prompt
-6. **PR merged/closed** → GitHub webhook → orchestrator destroys the container and volume
+4. **Claude Code** (inside the container) reads the task description, installs deps via `mise`, codes, tests (including Playwright visual tests), opens a PR. For Trello tasks: reads card via Trello MCP and moves card to Done.
+5. **Human comments** on the card (or replies in the Slack thread) → a Haiku guard call classifies the comment: (a) human-to-human chatter is silently skipped; (b) **operational commands** (`stop`, `move <list>`, `restart`, `archive`) are executed immediately by the orchestrator without spinning up a container; (c) code feedback kills any running container for that task and re-runs Claude with the comment as a follow-up prompt
+6. **PR merged/closed** → GitHub webhook → orchestrator destroys the container and volume; notifies Slack thread if applicable
 7. **Card archived** → Trello webhook → orchestrator drains any pending jobs and destroys the container and volume
 
 ## Setup
@@ -116,6 +116,14 @@ Edit `config.json` — non-sensitive settings live here:
       }
     ]
   },
+  "slack": {
+    "botToken": "env.SLACK_BOT_TOKEN",
+    "appToken": "env.SLACK_APP_TOKEN",
+    "signingSecret": "env.SLACK_SIGNING_SECRET",
+    "channels": {
+      "C0123ABCDEF": { "repos": ["https://github.com/myorg/my-app"] }
+    }
+  },
   "github": {
     "token": "env.GITHUB_TOKEN",
     "webhookSecret": "env.GITHUB_WEBHOOK_SECRET"
@@ -138,6 +146,9 @@ Edit `.env` — secrets only:
 TRELLO_API_KEY=
 TRELLO_API_SECRET=
 TRELLO_TOKEN=
+SLACK_BOT_TOKEN=
+SLACK_APP_TOKEN=
+SLACK_SIGNING_SECRET=
 GITHUB_TOKEN=
 GITHUB_WEBHOOK_SECRET=
 ANTHROPIC_API_KEY=
@@ -175,7 +186,41 @@ In both cases:
 - Secret: same value as `GITHUB_WEBHOOK_SECRET` in `.env`
 - Events: select **Pull requests** only
 
+### 8. Slack app (optional)
+
+Slack lets you trigger tasks and give feedback without Trello. You can use Slack alongside Trello (any combination), or Slack-only if you don't have Trello configured.
+
+**Create the Slack app:**
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App → From scratch**
+2. Enable **Socket Mode**: go to Settings → Socket Mode → toggle on. Generate an **app-level token** with the `connections:write` scope — this is your `SLACK_APP_TOKEN` (starts with `xapp-`)
+3. Add **Bot Token Scopes** under OAuth & Permissions → Scopes → Bot Token Scopes:
+   - `app_mentions:read` — receive `@bot` mentions
+   - `chat:write` — post messages
+   - `files:read` — read file attachments shared with the bot
+   - `channels:history` — read message history in public channels
+   - `groups:history` — read message history in private channels
+4. Go to **Event Subscriptions** → Enable Events → Subscribe to bot events: add `app_mention`
+5. **Install app to workspace** (OAuth & Permissions → Install to Workspace) and copy the **Bot User OAuth Token** — this is your `SLACK_BOT_TOKEN` (starts with `xoxb-`)
+6. Invite the bot to the channels where you want to use it: `/invite @your-bot-name`
+
+**Configure channel defaults (optional):**
+
+In `config.json`, add default repos for each channel (find the channel ID in Slack: right-click channel → View channel details → scroll down to copy ID):
+
+```json
+"slack": {
+  "channels": {
+    "C0123ABCDEF": { "repos": ["https://github.com/myorg/my-app"] }
+  }
+}
+```
+
+If a channel has no default repos, the bot will ask for a GitHub URL or Trello card URL when you mention it without one.
+
 ## Using it
+
+### From Trello
 
 1. Create a Trello card with a clear task description
 2. Include the target repo in the description:
@@ -192,16 +237,35 @@ In both cases:
    - Open a PR, move the card to Done, post the PR link as a comment
 6. Comment on the card to give feedback → Claude reads it and updates the PR
 
+### From Slack
+
+1. Mention the bot in a channel with a task description and optionally a GitHub repo URL:
+   ```
+   @claude-bot Add a dark mode toggle to the settings page https://github.com/myorg/my-app
+   ```
+2. Or link a Trello card to use that card's description and board repos:
+   ```
+   @claude-bot https://trello.com/c/abc123
+   ```
+3. If no repo is provided and the channel has no default configured, the bot will ask for one in a reply — just paste a GitHub or Trello URL in the thread
+4. You can attach images (screenshots, mockups) directly to the Slack message — they're downloaded and passed to Claude
+5. Reply in the thread to give feedback or run commands:
+   - `stop` — kill the running container
+   - `restart` — stop and re-queue as a fresh task
+   - Any other reply → classified by the Haiku guard as feedback or chatter
+
 ## Endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Status + credential check (`trello`, `github`, `anthropic` booleans) |
+| `GET` | `/health` | Status + credential check (`trello`, `github`, `anthropic`, `slack` booleans) |
 | `GET` | `/workers` | List active worker containers |
 | `HEAD/POST` | `/webhooks/trello` | Trello webhook receiver |
 | `POST` | `/webhooks/github` | GitHub webhook (PR closed → cleanup) |
 | `GET` | `/logs/:token` | Live log viewer (HTML) for a running worker |
 | `GET` | `/logs/:token/stream` | SSE stream of worker container stdout/stderr |
+
+> **Slack** uses Socket Mode — no HTTP endpoint is needed. The bot connects outbound to Slack's servers and receives events over a persistent WebSocket.
 
 ## Project structure
 
@@ -216,9 +280,10 @@ src/
   index.ts              — Express server, routes, startup webhook registration
   config.ts             — JSON config parser (env.KEY resolution + Zod validation)
   logger.ts             — Pino structured logging
+  notify.ts             — Status dispatcher: routes postStatus() to Trello or Slack (or both)
   webhook/
     handler.ts          — Trello + GitHub webhook verification, board/list filtering, routing
-    types.ts            — Payload and job types
+    types.ts            — Payload and job types; TaskSource discriminated union; getTaskSource()
   queue/
     queue.ts            — BullMQ queue definition
     worker.ts           — Job processor (new-task, feedback, cleanup)
@@ -231,8 +296,13 @@ src/
     repo.ts             — Extract repo URL from card description
   trello/
     api.ts              — Thin Trello client for error comments and card moves
+  slack/
+    client.ts           — Bolt app init (Socket Mode), postSlackReply(), isSlackConfigured()
+    handler.ts          — app_mention event handler: new tasks and threaded feedback from Slack
+    id.ts               — Slack task ID generation (s-<8 base36>) + Redis thread mapping
+    files.ts            — Download Slack file attachments for worker containers
   agent/
-    prompt.ts           — Build prompts for Claude Code
+    prompt.ts           — Build prompts for Claude Code (Trello + Slack variants)
     guard.ts            — Haiku-based classifier: ignore / feedback / operation (stop, move, restart, archive)
     operations.ts       — Execute operational commands inline without spinning up a container
 
@@ -264,6 +334,10 @@ mcp/
 | `trello.boards[].includeLists` | List names that trigger tasks (or use list IDs; empty = all lists) |
 | `trello.boards[].doing.list` | List name to move cards to when starting work (or use `listId`; omit to skip) |
 | `trello.boards[].done.list` | List name to move cards to when PR is opened (or use `listId`; omit to skip) |
+| `slack.botToken` | Slack Bot User OAuth Token (`xoxb-...`) — use `"env.SLACK_BOT_TOKEN"` |
+| `slack.appToken` | Slack app-level token (`xapp-...`) for Socket Mode — use `"env.SLACK_APP_TOKEN"` |
+| `slack.signingSecret` | Slack signing secret (optional, for request verification) — use `"env.SLACK_SIGNING_SECRET"` |
+| `slack.channels` | Map of Slack channel ID → `{ repos: string[] }` for per-channel default repos |
 | `github.token` | GitHub PAT (`repo` + `workflow` scopes, or fine-grained with Contents/PRs/Workflows write) — use `"env.GITHUB_TOKEN"` |
 | `github.webhookSecret` | GitHub webhook secret — use `"env.GITHUB_WEBHOOK_SECRET"` |
 | `anthropic.apiKey` | Anthropic API key — use `"env.ANTHROPIC_API_KEY"` |
@@ -283,6 +357,9 @@ mcp/
 | `TRELLO_API_KEY` | Trello API key |
 | `TRELLO_API_SECRET` | Trello API secret — used to verify webhook signatures |
 | `TRELLO_TOKEN` | Trello OAuth token (generated from bot account) |
+| `SLACK_BOT_TOKEN` | Slack Bot User OAuth Token (`xoxb-...`) |
+| `SLACK_APP_TOKEN` | Slack app-level token for Socket Mode (`xapp-...`) |
+| `SLACK_SIGNING_SECRET` | Slack signing secret (optional) |
 | `GITHUB_TOKEN` | GitHub PAT |
 | `GITHUB_WEBHOOK_SECRET` | GitHub webhook secret |
 | `ANTHROPIC_API_KEY` | Anthropic API key |

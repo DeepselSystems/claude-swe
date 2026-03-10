@@ -105,7 +105,7 @@ export class DockerBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal, extraEnv } = opts;
     const name = this.containerName(cardShortLink);
     const vol = this.volumeName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'docker', container: name });
@@ -210,11 +210,13 @@ export class DockerBackend implements ContainerBackend {
         `CARD_SHORT_LINK=${cardShortLink}`,
         `GIT_AUTHOR_NAME=${config.agent.git.name}`,
         `GIT_AUTHOR_EMAIL=${config.agent.git.email}`,
+        `SLACK_BOT_TOKEN=${config.slack.botToken ?? ''}`,
         'CI=1',
         'TERM=dumb',
         ...(config.containers.docker.enableSocketMount
           ? ['DOCKER_HOST=unix:///var/run/docker.sock']
           : []),
+        ...Object.entries(extraEnv ?? {}).map(([k, v]) => `${k}=${v}`),
       ],
       HostConfig: {
         Binds: [

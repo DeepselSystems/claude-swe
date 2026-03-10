@@ -55,7 +55,10 @@ trap _docker_cleanup EXIT
 # and the agent clones repos into subdirectories that become the project root.
 # ---------------------------------------------------------------------------
 WORKER_HOME="/home/worker"
-cat > "${WORKER_HOME}/.claude.json" <<MCPEOF
+
+# Build MCP config conditionally — include Trello MCP only if credentials are available
+if [ -n "${TRELLO_API_KEY:-}" ] && [ -n "${TRELLO_TOKEN:-}" ]; then
+  cat > "${WORKER_HOME}/.claude.json" <<MCPEOF
 {
   "mcpServers": {
     "trello": {
@@ -73,6 +76,20 @@ cat > "${WORKER_HOME}/.claude.json" <<MCPEOF
   }
 }
 MCPEOF
+  echo "MCP config written (trello + playwright)"
+else
+  cat > "${WORKER_HOME}/.claude.json" <<MCPEOF
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless", "--browser", "chromium", "--user-data-dir", "/tmp/playwright-mcp"]
+    }
+  }
+}
+MCPEOF
+  echo "MCP config written (playwright only — no Trello credentials)"
+fi
 chown worker:worker "${WORKER_HOME}/.claude.json"
 echo "MCP config written to ${WORKER_HOME}/.claude.json"
 
@@ -99,8 +116,33 @@ if [ -f /workspace/.feedback-prompt ]; then
   IMAGE_DIR="/workspace/.card-images"
   COMMENT_IMAGE_DIR="/workspace/.comment-images"
   mkdir -p "$IMAGE_DIR"
-  node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
-    || echo "Warning: image download failed — continuing"
+  if [ -n "${CARD_ID:-}" ]; then
+    node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
+      || echo "Warning: image download failed — continuing"
+  fi
+
+  # Download Slack file attachments if provided (feedback may include new screenshots)
+  if [ -n "${SLACK_FILE_URLS:-}" ] && [ -n "${SLACK_BOT_TOKEN:-}" ]; then
+    echo "Downloading Slack file attachments..."
+    node -e '
+const files = JSON.parse(process.env.SLACK_FILE_URLS);
+const token = process.env.SLACK_BOT_TOKEN;
+const fs = require("fs");
+const { pipeline } = require("stream/promises");
+const dir = "/workspace/.card-images";
+(async () => {
+  for (const f of files) {
+    try {
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const res = await fetch(f.url, { headers: { Authorization: "Bearer " + token } });
+      if (!res.ok) { console.error("Failed to download:", f.name, res.status); continue; }
+      await pipeline(res.body, fs.createWriteStream(dir + "/" + safeName));
+      console.log("Downloaded Slack file:", f.name);
+    } catch(e) { console.error("Failed to download:", f.name, e.message); }
+  }
+})();
+' || echo "Warning: Slack file download failed — continuing"
+  fi
 
   chown -R worker:worker /workspace
 
@@ -119,8 +161,33 @@ fi
 IMAGE_DIR="/workspace/.card-images"
 COMMENT_IMAGE_DIR="/workspace/.comment-images"
 mkdir -p "$IMAGE_DIR"
-node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
-  || echo "Warning: image download failed or no images found — continuing"
+if [ -n "${CARD_ID:-}" ]; then
+  node /opt/mcp/download-images.mjs "${CARD_ID}" "$IMAGE_DIR" --comments "$COMMENT_IMAGE_DIR" \
+    || echo "Warning: image download failed or no images found — continuing"
+fi
+
+# Download Slack file attachments if provided
+if [ -n "${SLACK_FILE_URLS:-}" ] && [ -n "${SLACK_BOT_TOKEN:-}" ]; then
+  echo "Downloading Slack file attachments..."
+  node -e '
+const files = JSON.parse(process.env.SLACK_FILE_URLS);
+const token = process.env.SLACK_BOT_TOKEN;
+const fs = require("fs");
+const { pipeline } = require("stream/promises");
+const dir = "/workspace/.card-images";
+(async () => {
+  for (const f of files) {
+    try {
+      const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const res = await fetch(f.url, { headers: { Authorization: "Bearer " + token } });
+      if (!res.ok) { console.error("Failed to download:", f.name, res.status); continue; }
+      await pipeline(res.body, fs.createWriteStream(dir + "/" + safeName));
+      console.log("Downloaded Slack file:", f.name);
+    } catch(e) { console.error("Failed to download:", f.name, e.message); }
+  }
+})();
+' || echo "Warning: Slack file download failed — continuing"
+fi
 
 # Configure git
 git config --global user.name "${GIT_AUTHOR_NAME:-Claude SWE}"

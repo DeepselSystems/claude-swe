@@ -3,12 +3,21 @@ import { config } from '../config.js';
 import { taskQueue } from './queue.js';
 import { logger } from '../logger.js';
 import { runTaskInContainer, destroyTaskContainer } from '../containers/manager.js';
-import { buildPlanPrompt, buildExecutePrompt, buildNewTaskPrompt, buildFeedbackPrompt } from '../agent/prompt.js';
+import {
+  buildPlanPrompt,
+  buildExecutePrompt,
+  buildNewTaskPrompt,
+  buildFeedbackPrompt,
+  buildSlackNewTaskPrompt,
+  buildSlackFeedbackPrompt,
+} from '../agent/prompt.js';
 import { classifyComment } from '../agent/guard.js';
 import { executeOperation } from '../agent/operations.js';
 import { getBoardRepos, getAllRepoSlugs } from '../workspace/repo.js';
 import { findOpenPRsForBranch } from '../github/pr.js';
-import { postTrelloComment, moveCardToList, fetchBoardLists } from '../trello/api.js';
+import { moveCardToList, fetchBoardLists } from '../trello/api.js';
+import { postStatus } from '../notify.js';
+import { getTaskSource } from '../webhook/types.js';
 import { createLogSession, removeLogSessionByCard } from '../logs/store.js';
 import type { NewTaskJob, FeedbackJob, CleanupJob, CancelJob } from '../webhook/types.js';
 
@@ -54,49 +63,88 @@ export const worker = new Worker(
 );
 
 async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
-  const { cardId, cardShortLink, cardName, cardUrl, boardId } = job.data;
+  const { cardShortLink, cardName } = job.data;
+  const cardId = job.data.cardId;
+  const boardId = job.data.boardId;
+  const source = getTaskSource(job.data);
   const log = logger.child({ phase: 'queue', jobId: job.id, cardId, cardShortLink, cardName });
 
   log.info({ attempt: job.attemptsMade + 1, maxAttempts: job.opts?.attempts ?? 1 }, 'Picked up new-task job');
   cancelledCards.delete(cardShortLink); // Clear stale cancelled state in case bot was re-assigned
 
   const branchName = `claude/${cardShortLink}`;
-  const repos = getBoardRepos(boardId);
-  log.info({ branchName, repos }, 'Resolved branch and repos for task');
 
-  const promptOpts = { cardId, cardShortLink, cardName, cardUrl, repos, imageDir: '/workspace/.card-images', doneListId: job.data.doneListId };
+  // Resolve repos: Slack tasks carry pre-resolved repos; Trello tasks resolve from boardId
+  const repos = job.data.repos ?? (boardId ? getBoardRepos(boardId) : []);
+  log.info({ branchName, repos, sourceType: source.type }, 'Resolved branch and repos for task');
+
   const { planMode, models, prompts } = config.agent;
   const planModel = models.plan;
   const executeModel = models.execute;
 
+  // Build extraEnv for Slack file attachments
+  const slackFiles = job.data.slackFiles;
+  const extraEnv: Record<string, string> | undefined =
+    slackFiles && slackFiles.length > 0 ? { SLACK_FILE_URLS: JSON.stringify(slackFiles) } : undefined;
+
   let containerOpts: Parameters<typeof runTaskInContainer>[0];
 
-  if (planMode) {
+  if (source.type === 'slack') {
+    // Slack tasks: always single-phase
+    const prompt = buildSlackNewTaskPrompt({
+      taskId: cardShortLink,
+      taskDescription: job.data.taskDescription ?? cardName,
+      repos,
+      imageDir: '/workspace/.card-images',
+      trelloCardUrl: source.trelloCardId ? `https://trello.com/c/${source.trelloCardId}` : undefined,
+    }, prompts.newTask);
+    log.info({ promptLength: prompt.length }, 'Built Slack single-phase prompt');
+    containerOpts = { cardShortLink, cardId: cardId ?? '', branchName, prompt, executeModel, isFollowUp: false, extraEnv };
+  } else if (planMode) {
+    const promptOpts = {
+      cardId: cardId!,
+      cardShortLink,
+      cardName,
+      cardUrl: job.data.cardUrl,
+      repos,
+      imageDir: '/workspace/.card-images',
+      doneListId: job.data.doneListId,
+    };
     const planPrompt = buildPlanPrompt(promptOpts, prompts.plan);
     const executePrompt = buildExecutePrompt(promptOpts, prompts.execute);
     log.info({ planPromptLength: planPrompt.length, executePromptLength: executePrompt.length }, 'Built two-phase prompts');
-    containerOpts = { cardShortLink, cardId, branchName, planPrompt, executePrompt, planModel, executeModel, isFollowUp: false, doneListId: job.data.doneListId };
+    containerOpts = { cardShortLink, cardId: cardId!, branchName, planPrompt, executePrompt, planModel, executeModel, isFollowUp: false, doneListId: job.data.doneListId };
   } else {
+    const promptOpts = {
+      cardId: cardId!,
+      cardShortLink,
+      cardName,
+      cardUrl: job.data.cardUrl,
+      repos,
+      imageDir: '/workspace/.card-images',
+      doneListId: job.data.doneListId,
+    };
     const prompt = buildNewTaskPrompt(promptOpts, prompts.newTask);
     log.info({ promptLength: prompt.length }, 'Built single-phase prompt (planMode disabled)');
-    containerOpts = { cardShortLink, cardId, branchName, prompt, executeModel, isFollowUp: false, doneListId: job.data.doneListId };
+    containerOpts = { cardShortLink, cardId: cardId!, branchName, prompt, executeModel, isFollowUp: false, doneListId: job.data.doneListId };
   }
 
-  if (job.data.doingListId) {
+  // Move Trello card to Doing list if configured
+  if (source.type === 'trello' && cardId && job.data.doingListId) {
     await moveCardToList(cardId, job.data.doingListId).catch((err) =>
       log.warn({ err }, 'Failed to move card to Doing list — continuing'),
     );
     log.info({ doingListId: job.data.doingListId }, 'Moved card to Doing list');
   }
 
-  // Create a log session and post the live-log URL as a Trello comment
-  const logSession = await createLogSession(cardShortLink, cardId, cardName);
+  // Create a log session and post the live-log URL
+  const logSession = await createLogSession(cardShortLink, cardId ?? '', cardName);
   if (config.server.webhookBaseUrl) {
     const logUrl = `${config.server.webhookBaseUrl}/logs/${logSession.token}`;
-    await postTrelloComment(cardId, `🔗 Live worker logs: ${logUrl}`).catch((err) =>
-      log.warn({ err }, 'Failed to post log URL comment'),
+    await postStatus(source, `🔗 Live worker logs: ${logUrl}`).catch((err) =>
+      log.warn({ err }, 'Failed to post log URL'),
     );
-    log.info({ logUrl }, 'Posted live log URL to Trello');
+    log.info({ logUrl }, 'Posted live log URL');
   }
 
   const abortController = new AbortController();
@@ -104,7 +152,7 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
   containerOpts = { ...containerOpts, signal: abortController.signal };
 
   try {
-    log.info({ planMode, planModel, executeModel }, 'Handing off to container backend — starting worker container');
+    log.info({ planMode: source.type === 'trello' ? planMode : false, planModel, executeModel }, 'Handing off to container backend — starting worker container');
     const startTime = Date.now();
 
     const { exitCode, logs } = await runTaskInContainer(containerOpts);
@@ -121,14 +169,10 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
         log.info({ exitCode }, 'Worker exited non-zero but card was cancelled — suppressing failure comment');
         return;
       }
-      log.warn({ exitCode }, 'Worker exited with non-zero code — posting failure comment to Trello');
+      log.warn({ exitCode }, 'Worker exited with non-zero code — posting failure comment');
       const tail = logs.split('\n').filter(l => l.trim()).slice(-50).join('\n');
-      await postTrelloComment(
-        cardId,
-        `❌ Claude exited with code ${exitCode}.\n\nLast output:\n\`\`\`\n${tail}\n\`\`\``,
-      ).catch(() => {});
-      // Do NOT throw — Claude exiting non-zero is an intentional signal, not a transient error.
-      // Throwing would cause BullMQ to retry, wasting API credits on the same broken state.
+      await postStatus(source, `❌ Claude exited with code ${exitCode}.\n\nLast output:\n\`\`\`\n${tail}\n\`\`\``).catch(() => {});
+      // Do NOT throw — non-zero exit is intentional, not transient
       return;
     }
 
@@ -153,7 +197,10 @@ async function handleNewTask(job: Job<NewTaskJob>): Promise<void> {
 }
 
 async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
-  const { cardId, cardShortLink, cardName, cardUrl, commentText, commenterName, boardId } = job.data;
+  const { cardShortLink, cardName, commentText, commenterName } = job.data;
+  const cardId = job.data.cardId;
+  const boardId = job.data.boardId;
+  const source = getTaskSource(job.data);
   const log = logger.child({ phase: 'queue', jobId: job.id, cardId, cardShortLink });
 
   log.info(
@@ -161,12 +208,14 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
     'Picked up feedback job',
   );
 
-  // Fetch board lists for guard (used to offer move targets) — non-fatal if it fails
+  // Fetch board lists for guard (Trello tasks only; Slack tasks pass empty list)
   let boardLists: { id: string; name: string }[] = [];
-  try {
-    boardLists = await fetchBoardLists(boardId);
-  } catch (err) {
-    log.warn({ err }, 'Failed to fetch board lists for guard — continuing without list context');
+  if (source.type === 'trello' && boardId) {
+    try {
+      boardLists = await fetchBoardLists(boardId);
+    } catch (err) {
+      log.warn({ err }, 'Failed to fetch board lists for guard — continuing without list context');
+    }
   }
 
   // Guard: classify the comment before aborting any existing job.
@@ -185,14 +234,12 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
   }
 
   // type === 'feedback' — kill any in-flight work and spin up a container
-  // Kill any in-flight new-task container — feedback supersedes the original task.
   const runningNewTask = activeNewTaskJobs.get(cardShortLink);
   if (runningNewTask) {
     log.info('Aborting in-flight new-task container — feedback comment takes over');
     runningNewTask.abort();
   }
 
-  // Abort any in-flight feedback job for this card — the newest comment supersedes it.
   const existing = activeFeedbackJobs.get(cardShortLink);
   if (existing) {
     log.info('Aborting previous feedback job — newer comment will be processed instead');
@@ -202,27 +249,54 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
   activeFeedbackJobs.set(cardShortLink, abortController);
 
   const branchName = `claude/${cardShortLink}`;
-  const repos = getBoardRepos(boardId);
+  const repos = job.data.repos ?? (boardId ? getBoardRepos(boardId) : []);
   log.info({ branchName, repos }, 'Resolved branch and repos for feedback');
 
-  const prompt = buildFeedbackPrompt({ cardId, cardShortLink, cardUrl, commentText, commenterName, repos, imageDir: '/workspace/.card-images', doneListId: job.data.doneListId }, config.agent.prompts.feedback);
+  // Build extraEnv for Slack file attachments
+  const feedbackSlackFiles = job.data.slackFiles;
+  const feedbackExtraEnv: Record<string, string> | undefined =
+    feedbackSlackFiles && feedbackSlackFiles.length > 0 ? { SLACK_FILE_URLS: JSON.stringify(feedbackSlackFiles) } : undefined;
+
+  let prompt: string;
+  if (source.type === 'slack') {
+    prompt = buildSlackFeedbackPrompt({
+      taskId: cardShortLink,
+      commentText,
+      commenterName,
+      repos,
+      imageDir: '/workspace/.card-images',
+      trelloCardUrl: source.trelloCardId ? `https://trello.com/c/${source.trelloCardId}` : undefined,
+    }, config.agent.prompts.feedback);
+  } else {
+    prompt = buildFeedbackPrompt({
+      cardId: cardId!,
+      cardShortLink,
+      cardUrl: job.data.cardUrl,
+      commentText,
+      commenterName,
+      repos,
+      imageDir: '/workspace/.card-images',
+      doneListId: job.data.doneListId,
+    }, config.agent.prompts.feedback);
+  }
   log.info({ promptLength: prompt.length }, 'Built feedback prompt');
 
-  if (job.data.doingListId) {
+  // Move Trello card to Doing list if configured
+  if (source.type === 'trello' && cardId && job.data.doingListId) {
     await moveCardToList(cardId, job.data.doingListId).catch((err) =>
       log.warn({ err }, 'Failed to move card to Doing list — continuing'),
     );
     log.info({ doingListId: job.data.doingListId }, 'Moved card to Doing list');
   }
 
-  // Create a log session and post the live-log URL as a Trello comment
-  const logSession = await createLogSession(cardShortLink, cardId, cardName);
+  // Create a log session and post the live-log URL
+  const logSession = await createLogSession(cardShortLink, cardId ?? '', cardName);
   if (config.server.webhookBaseUrl) {
     const logUrl = `${config.server.webhookBaseUrl}/logs/${logSession.token}`;
-    await postTrelloComment(cardId, `🔗 Live worker logs: ${logUrl}`).catch((err) =>
-      log.warn({ err }, 'Failed to post log URL comment'),
+    await postStatus(source, `🔗 Live worker logs: ${logUrl}`).catch((err) =>
+      log.warn({ err }, 'Failed to post log URL'),
     );
-    log.info({ logUrl }, 'Posted live log URL to Trello');
+    log.info({ logUrl }, 'Posted live log URL');
   }
 
   try {
@@ -231,13 +305,14 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
 
     const { exitCode, logs } = await runTaskInContainer({
       cardShortLink,
-      cardId,
+      cardId: cardId ?? '',
       branchName,
       prompt,
       executeModel: config.agent.models.execute,
       isFollowUp: true,
       doneListId: job.data.doneListId,
       signal: abortController.signal,
+      extraEnv: feedbackExtraEnv,
     });
 
     const durationMs = Date.now() - startTime;
@@ -252,14 +327,10 @@ async function handleFeedback(job: Job<FeedbackJob>): Promise<void> {
         log.info({ exitCode }, 'Feedback exited non-zero but card was cancelled — suppressing failure comment');
         return;
       }
-      log.warn({ exitCode }, 'Feedback worker exited with non-zero code — posting failure comment to Trello');
+      log.warn({ exitCode }, 'Feedback worker exited with non-zero code — posting failure comment');
       const tail = logs.split('\n').filter(l => l.trim()).slice(-50).join('\n');
-      await postTrelloComment(
-        cardId,
-        `❌ Claude failed to process feedback (exit ${exitCode}).\n\n\`\`\`\n${tail}\n\`\`\``,
-      ).catch(() => {});
-      // Do NOT throw — Claude exiting non-zero is intentional, not transient.
-      // Retrying would waste API credits on the same state.
+      await postStatus(source, `❌ Claude failed to process feedback (exit ${exitCode}).\n\n\`\`\`\n${tail}\n\`\`\``).catch(() => {});
+      // Do NOT throw — non-zero exit is intentional, not transient.
       return;
     }
 
@@ -330,7 +401,9 @@ async function handleCleanup(job: Job<CleanupJob>): Promise<void> {
 }
 
 async function handleCancel(job: Job<CancelJob>): Promise<void> {
-  const { cardId, cardShortLink } = job.data;
+  const { cardShortLink } = job.data;
+  const cardId = job.data.cardId;
+  const source = getTaskSource(job.data);
   const log = logger.child({ phase: 'cancel', jobId: job.id, cardId, cardShortLink });
 
   log.info('Picked up cancel job — bot was removed from card');
@@ -352,16 +425,15 @@ async function handleCancel(job: Job<CancelJob>): Promise<void> {
     log.warn({ err }, 'Failed to drain queued jobs — continuing with cleanup');
   }
 
-  // Stop and destroy the container/volume (works for both Docker and Kubernetes)
+  // Stop and destroy the container/volume
   log.info('Destroying container and volume');
   await destroyTaskContainer(cardShortLink);
   log.info('Container and volume destroyed');
 
-  // Notify on card
-  await postTrelloComment(
-    cardId,
-    '🛑 Claude was removed from this card — work has been stopped and cleaned up.',
-  ).catch((err) => log.warn({ err }, 'Failed to post cancellation comment'));
+  // Notify on the originating platform
+  await postStatus(source, '🛑 Claude was removed from this card — work has been stopped and cleaned up.').catch((err) =>
+    log.warn({ err }, 'Failed to post cancellation comment'),
+  );
 
   log.info('Cancel complete');
 }

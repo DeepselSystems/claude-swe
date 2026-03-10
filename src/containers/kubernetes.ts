@@ -48,7 +48,7 @@ export class KubernetesBackend implements ContainerBackend {
   }
 
   async runTask(opts: RunTaskOptions): Promise<{ exitCode: number; logs: string }> {
-    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal } = opts;
+    const { cardShortLink, cardId, prompt, planPrompt, executePrompt, planModel, executeModel, doneListId, isFollowUp, signal, extraEnv } = opts;
     const jobName = this.jobName(cardShortLink);
     const pvcName = this.pvcName(cardShortLink);
     const log = logger.child({ phase: 'container', backend: 'k8s', job: jobName, namespace: this.namespace });
@@ -157,11 +157,13 @@ export class KubernetesBackend implements ContainerBackend {
                   { name: 'CARD_SHORT_LINK',       value: cardShortLink },
                   { name: 'GIT_AUTHOR_NAME',       value: config.agent.git.name },
                   { name: 'GIT_AUTHOR_EMAIL',      value: config.agent.git.email },
+                  { name: 'SLACK_BOT_TOKEN',       value: config.slack.botToken ?? '' },
                   { name: 'CI',                    value: '1' },
                   { name: 'TERM',                  value: 'dumb' },
                   ...(enableDinD
                     ? [{ name: 'DOCKER_HOST', value: 'unix:///var/run/dind/docker.sock' }]
                     : []),
+                  ...Object.entries(extraEnv ?? {}).map(([k, v]) => ({ name: k, value: v })),
                 ],
                 resources: {
                   requests: { memory: '512Mi', cpu: '500m' },
